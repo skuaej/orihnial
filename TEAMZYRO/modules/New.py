@@ -14,9 +14,10 @@ DAILY_CD = timedelta(hours=24)
 ADMIN_IDS = [1334658171]
 
 
-# ─── GET OR CREATE USER ─────────────────────────────
+# ─── GET OR CREATE USER (SAFE FOR OLD USERS) ─────────
 async def get_user(user):
     data = await user_collection.find_one({"id": user.id})
+
     if not data:
         data = {
             "id": user.id,
@@ -29,6 +30,30 @@ async def get_user(user):
             "characters": []
         }
         await user_collection.insert_one(data)
+        return data
+
+    # 🔧 Ensure missing fields exist (auto-fix old users)
+    updates = {}
+    if "coins" not in data:
+        updates["coins"] = 0
+    if "last_hourly" not in data:
+        updates["last_hourly"] = None
+    if "last_daily" not in data:
+        updates["last_daily"] = None
+    if "daily_streak" not in data:
+        updates["daily_streak"] = 0
+    if "vip" not in data:
+        updates["vip"] = False
+    if "characters" not in data:
+        updates["characters"] = []
+
+    if updates:
+        await user_collection.update_one(
+            {"id": user.id},
+            {"$set": updates}
+        )
+        data.update(updates)
+
     return data
 
 
@@ -38,7 +63,7 @@ async def balance_cmd(_, message):
     user = await get_user(message.from_user)
     await message.reply_text(
         f"💳 **Your Balance**\n\n"
-        f"🪙 Coins: `{user['coins']}`\n"
+        f"🪙 Coins: `{user.get('coins', 0)}`\n"
         f"🔥 Daily Streak: `{user.get('daily_streak', 0)}`\n"
         f"💎 VIP: `{user.get('vip', False)}`"
     )
@@ -50,8 +75,9 @@ async def hourly_cmd(_, message):
     user = await get_user(message.from_user)
     now = datetime.utcnow()
 
-    if user["last_hourly"]:
-        remaining = HOURLY_CD - (now - user["last_hourly"])
+    last_hourly = user.get("last_hourly")
+    if last_hourly:
+        remaining = HOURLY_CD - (now - last_hourly)
         if remaining.total_seconds() > 0:
             m, s = divmod(int(remaining.total_seconds()), 60)
             return await message.reply_text(
@@ -79,8 +105,9 @@ async def daily_cmd(_, message):
     user = await get_user(message.from_user)
     now = datetime.utcnow()
 
-    if user["last_daily"]:
-        diff = now - user["last_daily"]
+    last_daily = user.get("last_daily")
+    if last_daily:
+        diff = now - last_daily
         if diff < DAILY_CD:
             h = int((DAILY_CD - diff).total_seconds() // 3600)
             return await message.reply_text(
