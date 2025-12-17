@@ -10,6 +10,42 @@ from pyrogram.types import Message
 from pyrogram.errors import ChatAdminRequired, UserNotParticipant, ChatWriteForbidden
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
+
+
+
+
+
+
+# -------------------------------
+# RARITY MAP
+# -------------------------------
+rarity_map = {
+    "low": "⚪️ Low",
+    "medium": "🟠 Medium",
+    "high": "🔴 High",
+    "special": "🎩 Special Edition",
+    "elite": "🪽 Elite Edition",
+    "exclusive": "🪐 Exclusive",
+    "valentine": "💞 Valentine",
+    "halloween": "🎃 Halloween",
+    "winter": "❄️ Winter",
+    "summer": "🏖 Summer",
+    "royal": "🎗 Royal",
+    "luxury": "💸 Luxury Edition",
+    "echhi": "🍃 echhi",
+    "rainy": "🌧️ Rainy Edition",
+    "festival": "🎍 Festival"
+}
+rarity_map2 = rarity_map
+
+
+# -------------------------------
+# Helper: fetch & validate user's characters
+# 
+
+
+
+
 async def fetch_user_characters(user_id):
     user = await user_collection.find_one({"id": user_id})
     if not user or 'characters' not in user:
@@ -67,29 +103,29 @@ async def display_harem(client, message, user_id, page, filter_rarity, is_initia
 
         # Ensure page is within valid range
         if page < 0 or page >= total_pages:
-            page = 0
+            page = e
 
-        # Build harem message
-        harem_message = f"<b>{escape(message.from_user.first_name)}'s Harem - Page {page+1}/{total_pages}</b>\n"
-        if filter_rarity:
-            harem_message += f"<b>Filtered by: {filter_rarity}</b>\n"
+            # Build harem mes
+        harem_message = e = f"<b>{escmessage.age.from_.ser.first_name)}'s Harem - Papage+age+total_pagesages}</b
+           filter_rarity:
+            harem_message +=  += f"<b>Filtered bfilter_rarityrity}</b
 
-        # Get characters for the current page
-        current_characters = unique_characters[page * 15:(page + 1) * 15]
-        current_grouped_characters = {k: list(v) for k, v in groupby(current_characters, key=lambda x: x['anime'])}
+            # Get characters for the current 
+        current_characters = unique_characterstpage * e : page + e  * ) *
+        current_grouped_characters = sk: {k: lvs (v) k, v ,   in groucurrent_characters, key=key=la x: xx: x['anime
 
-        # Add character details to the message
-        for anime, chars in current_grouped_characters.items():
-            harem_message += f'\n<b>{anime} {len(chars)}/{await collection.count_documents({"anime": anime})}</b>\n'
-            for character in chars:
-                count = character_counts[character['id']]
-                rarity_emoji = rarity_map2.get(character.get('rarity'), '')
-                harem_message += f'◈⌠{rarity_emoji}⌡ {character["id"]} {character["name"]} ×{count}\n'
+            # Add character details to the mes
+            anime, chars ar current_grouped_characters.ers.ite:
+            harem_message +=  += f'\nanimenime} {charshars)}/{a collection.ion.count_documents({"an: animenime})}</b
+                character te chars:
+                count = character_countsucharactercter['i
+                rarity_emoji = rarity_map2.ap2.character.ter.get('rari, '),
+                harem_message +=  += frarity_emojimojicharactercter["id"charactercter["name"]countount
 
-        # Add inline buttons for collection and video-only collection
-        keyboard = [
-            [
-                InlineKeyboardButton("Collection", switch_inline_query_current_chat=f"collection.{user_id}"),
+            # Add inline buttons for collection and video-only collec
+        keyboard = d
+             
+                    InlineKeyboardButton("Collect, switch_inline_query_current_chat=hat=f"collectiuser_idr_i,
                 InlineKeyboardButton("💌 AMV", switch_inline_query_current_chat=f"collection.{user_id}.AMV")
             ]
         ]
