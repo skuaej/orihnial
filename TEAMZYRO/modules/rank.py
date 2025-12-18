@@ -1,122 +1,150 @@
-from pyrogram import Client, filters, enums  
+from pyrogram import Client, filters, enums
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import random
 import asyncio
 import html
-from TEAMZYRO import app as Client
+
+from TEAMZYRO import app
 from TEAMZYRO import user_collection, top_global_groups_collection
 
-PHOTO_URL = ["https://files.catbox.moe/9j8e6b.jpg"]  
+PHOTO_URL = ["https://files.catbox.moe/9j8e6b.jpg"]
 
-@Client.on_message(filters.command("rank"))
+
+# ─── /rank COMMAND ──────────────────────────────────
+@app.on_message(filters.command("rank"))
 async def rank(client, message):
-    cursor = user_collection.find({}, {"_id": 0, "id": 1, "first_name": 1, "characters": 1})
-    leaderboard_data = await cursor.to_list(length=None)
-    leaderboard_data.sort(key=lambda x: len(x.get('characters', [])), reverse=True)
-    leaderboard_data = leaderboard_data[:10]
+    cursor = user_collection.find(
+        {}, {"_id": 0, "id": 1, "first_name": 1, "characters": 1}
+    )
+    users = await cursor.to_list(length=None)
 
-    leaderboard_message = "<b>ᴛᴏᴘ 10 ᴜsᴇʀs ᴡɪᴛʜ ᴍᴏsᴛ ᴄʜᴀʀᴀᴄᴛᴇʀs</b>\n\n"
-    for i, user in enumerate(leaderboard_data, start=1):
-        user_id = user.get('id', 'Unknown')
-        first_name = html.escape(user.get('first_name', 'Unknown'))[:15] + '...'
-        character_count = len(user.get('characters', []))
-        leaderboard_message += f'{i}. <a href="tg://user?id={user_id}"><b>{first_name}</b></a> ➾ <b>{character_count}</b>\n'
+    users.sort(key=lambda x: len(x.get("characters", [])), reverse=True)
+    users = users[:10]
 
-    buttons = [
+    caption = "<b>🏆 TOP 10 USERS WITH MOST CHARACTERS</b>\n\n"
+    for i, user in enumerate(users, start=1):
+        uid = user.get("id")
+        name = html.escape(user.get("first_name", "Unknown"))[:15]
+        count = len(user.get("characters", []))
+        caption += f"{i}. <a href='tg://user?id={uid}'><b>{name}</b></a> ➾ {count}\n"
+
+    buttons = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("ᴛᴏᴘ🥀", callback_data="top"),
-            InlineKeyboardButton("ᴛᴏᴘ ɢʀᴏᴜᴘ🥀", callback_data="top_group"),
-        ],
-        [
-            InlineKeyboardButton("ᴍᴛᴏᴘ🥀", callback_data="mtop"),
-            InlineKeyboardButton("ᴛᴏᴋᴇɴs🥀", callback_data="tokens"),
-        ],
-    ]
+            [
+                InlineKeyboardButton("🏆 TOP", callback_data="top"),
+                InlineKeyboardButton("👥 TOP GROUP", callback_data="top_group"),
+            ],
+            [
+                InlineKeyboardButton("💰 COINS", callback_data="mtop"),
+                InlineKeyboardButton("🪙 TOKENS", callback_data="tokens"),
+            ],
+        ]
+    )
 
     await message.reply_photo(
         photo=random.choice(PHOTO_URL),
-        caption=leaderboard_message,
+        caption=caption,
         parse_mode=enums.ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(buttons)
+        reply_markup=buttons
     )
 
-async def update_caption(callback_query, caption, active_button):
-    buttons = [
+
+# ─── HELPER TO UPDATE CAPTION ───────────────────────
+async def update_caption(callback_query, caption):
+    buttons = InlineKeyboardMarkup(
         [
-            InlineKeyboardButton("ᴛᴏᴘ🥀" if active_button == "top" else "Top", callback_data="top"),
-            InlineKeyboardButton("ᴛᴏᴘ ɢʀᴏᴜᴘ🥀" if active_button == "top_group" else "Top Group", callback_data="top_group"),
-        ],
-        [
-            InlineKeyboardButton("ᴍᴛᴏᴘ🥀" if active_button == "mtop" else "MTOP", callback_data="mtop"),
-            InlineKeyboardButton("ᴛᴏᴋᴇɴs🥀" if active_button == "tokens" else "Tokens", callback_data="tokens"),
-        ],
-    ]
+            [
+                InlineKeyboardButton("🏆 TOP", callback_data="top"),
+                InlineKeyboardButton("👥 TOP GROUP", callback_data="top_group"),
+            ],
+            [
+                InlineKeyboardButton("💰 COINS", callback_data="mtop"),
+                InlineKeyboardButton("🪙 TOKENS", callback_data="tokens"),
+            ],
+        ]
+    )
 
     await callback_query.edit_message_caption(
         caption=caption,
         parse_mode=enums.ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(buttons)
+        reply_markup=buttons
     )
 
-@Client.on_callback_query(filters.regex("^top$"))
+
+# ─── TOP CHARACTERS ─────────────────────────────────
+@app.on_callback_query(filters.regex("^top$"))
 async def top_callback(client, callback_query):
     await asyncio.sleep(1)
-    cursor = user_collection.find({}, {"_id": 0, "id": 1, "first_name": 1, "characters": 1})
-    leaderboard_data = await cursor.to_list(length=None)
-    leaderboard_data.sort(key=lambda x: len(x.get('characters', [])), reverse=True)
-    leaderboard_data = leaderboard_data[:10]
 
-    caption = "<b>ᴛᴏᴘ 10 ᴜsᴇʀs ᴡɪᴛʜ ᴍᴏsᴛ ᴄʜᴀʀᴀᴄᴛᴇʀs</b>\n\n"
-    for i, user in enumerate(leaderboard_data, start=1):
-        user_id = user.get('id', 'Unknown')
-        first_name = html.escape(user.get('first_name', 'Unknown'))[:15] + '...'
-        character_count = len(user.get('characters', []))
-        caption += f'{i}. <a href="tg://user?id={user_id}"><b>{first_name}</b></a> ➾ <b>{character_count}</b>\n'
+    users = await user_collection.find().to_list(None)
+    users.sort(key=lambda x: len(x.get("characters", [])), reverse=True)
+    users = users[:10]
 
-    await update_caption(callback_query, caption, "top")
+    caption = "<b>🏆 TOP 10 USERS WITH MOST CHARACTERS</b>\n\n"
+    for i, u in enumerate(users, start=1):
+        caption += (
+            f"{i}. <a href='tg://user?id={u['id']}'>"
+            f"<b>{html.escape(u.get('first_name','Unknown'))}</b></a>"
+            f" ➾ {len(u.get('characters', []))}\n"
+        )
 
-@Client.on_callback_query(filters.regex("^top_group$"))
+    await update_caption(callback_query, caption)
+
+
+# ─── TOP GROUPS ─────────────────────────────────────
+@app.on_callback_query(filters.regex("^top_group$"))
 async def top_group_callback(client, callback_query):
     await asyncio.sleep(1)
+
     cursor = top_global_groups_collection.aggregate([
         {"$project": {"group_name": 1, "count": 1}},
         {"$sort": {"count": -1}},
         {"$limit": 10}
     ])
-    leaderboard_data = await cursor.to_list(length=10)
-    
-    caption = "<b>ᴛᴏᴘ 10 ɢʀᴏᴜᴘs ᴡʜᴏ ɢᴜssᴇᴅ ᴍᴏsᴛ ᴄʜᴀʀᴀᴄᴛᴇʀs</b>\n\n"
-    for i, group in enumerate(leaderboard_data, start=1):
-        group_name = html.escape(group.get('group_name', 'Unknown'))[:15] + '...'
-        count = group['count']
-        caption += f'{i}. <b>{group_name}</b> ➾ <b>{count}</b>\n'
+    groups = await cursor.to_list(10)
 
-    await update_caption(callback_query, caption, "top_group")
+    caption = "<b>👥 TOP 10 GROUPS WITH MOST GUESSES</b>\n\n"
+    for i, g in enumerate(groups, start=1):
+        caption += f"{i}. <b>{html.escape(g['group_name'])}</b> ➾ {g['count']}\n"
 
-@Client.on_callback_query(filters.regex("^mtop$"))
+    await update_caption(callback_query, caption)
+
+
+# ─── COINS LEADERBOARD (FIXED) ──────────────────────
+@app.on_callback_query(filters.regex("^mtop$"))
 async def mtop_callback(client, callback_query):
     await asyncio.sleep(1)
-    top_users = await user_collection.find().sort("balance", -1).limit(10).to_list(length=10)
 
-    caption = "<b>ᴍᴛᴏᴘ ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ</b>\n\n🏆 Tᴏᴘ 10 Uꜱᴇʀs ʙʏ Cᴏɪɴs:\n\n"
-    for rank, user in enumerate(top_users, start=1):
-        user_id = user.get("id", "Unknown")
-        first_name = user.get("first_name", "Unknown")
-        coins = user.get("balance", 0)
-        caption += f"{rank}. <a href='tg://user?id={user_id}'><b>{first_name}</b></a>: 💸 {coins} Coins\n"
+    users = await user_collection.find(
+        {"coins": {"$exists": True}}
+    ).sort("coins", -1).limit(10).to_list(10)
 
-    await update_caption(callback_query, caption, "mtop")
+    caption = "<b>💰 TOP 10 USERS BY COINS</b>\n\n"
+    for i, u in enumerate(users, start=1):
+        caption += (
+            f"{i}. <a href='tg://user?id={u['id']}'>"
+            f"<b>{html.escape(u.get('first_name','Unknown'))}</b></a>"
+            f" ➾ 💸 {u.get('coins', 0)}\n"
+        )
 
-@Client.on_callback_query(filters.regex("^tokens$"))
+    await update_caption(callback_query, caption)
+
+
+# ─── TOKENS LEADERBOARD ─────────────────────────────
+@app.on_callback_query(filters.regex("^tokens$"))
 async def tokens_callback(client, callback_query):
     await asyncio.sleep(1)
-    top_users = await user_collection.find().sort("tokens", -1).limit(10).to_list(length=10)
 
-    caption = "<b>ᴛᴏᴋᴇɴs ʟᴇᴀᴅᴇʀʙᴏᴀʀᴅ</b>\n\n🏆 Tᴏᴘ 10 Uꜱᴇʀs ʙʏ Tokens:\n\n"
-    for rank, user in enumerate(top_users, start=1):
-        user_id = user.get("id", "Unknown")
-        first_name = user.get("first_name", "Unknown")
-        tokens = user.get("tokens", 0)
-        caption += f"{rank}. <a href='tg://user?id={user_id}'><b>{first_name}</b></a>: 🪙 {tokens} Tokens\n"
+    users = await user_collection.find(
+        {"tokens": {"$exists": True}}
+    ).sort("tokens", -1).limit(10).to_list(10)
 
-    await update_caption(callback_query, caption, "tokens")
+    caption = "<b>🪙 TOP 10 USERS BY TOKENS</b>\n\n"
+    for i, u in enumerate(users, start=1):
+        caption += (
+            f"{i}. <a href='tg://user?id={u['id']}'>"
+            f"<b>{html.escape(u.get('first_name','Unknown'))}</b></a>"
+            f" ➾ 🪙 {u.get('tokens', 0)}\n"
+        )
+
+    await update_caption(callback_query, caption)
