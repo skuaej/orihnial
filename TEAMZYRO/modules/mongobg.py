@@ -4,86 +4,94 @@ import bson
 import os
 from TEAMZYRO import app
 
-OWNER_ID = 1334658171
+# ─────────────────────────────
+# CONFIG (CHANGE ONLY THESE)
+# ─────────────────────────────
 
-SOURCE_URI = os.getenv("MONGO_URI")
-BACKUP_URI = os.getenv("BACKUP_MONGO_URI")
-DB_NAME = os.getenv("DB_NAME", "waifu_bot")
+OWNER_ID = 1334658171  # only this user can run commands
 
+# Source = ORIGINAL DB (current bot database)
+SOURCE_URI = "mongodb+srv://sk5400552:shjjkytdcghhudd@cluster0g.kbllv.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0g"
+
+# Backup = BACKUP DB (safe copy)
+BACKUP_URI = "mongodb+srv://shek272881oujo.mongodb.net/?retryWrites=true&w=majority&appName=Waifudb"
+
+DB_NAME = "waifu_bot"   # database name (same in both)
+
+# ─────────────────────────────
+# UTILS
+# ─────────────────────────────
 
 def calc_size(docs):
     return sum(len(bson.BSON.encode(d)) for d in docs)
 
+# ─────────────────────────────
+# BACKUP COMMAND
+# ─────────────────────────────
 
-def check_env():
-    return SOURCE_URI and BACKUP_URI and DB_NAME
-
-
-# ───────── BACKUP (ALL CHATS) ─────────
-@app.on_message(
-    filters.command("backupdb") &
-    filters.user(OWNER_ID)
-)
+@app.on_message(filters.command("backupdb") & filters.user(OWNER_ID))
 async def backup_db(_, message):
-    if not check_env():
-        return await message.reply_text("❌ ENV variables missing")
-
     try:
-        await message.reply_text("⏳ Starting database BACKUP...")
+        await message.reply_text("⏳ **Starting database backup...**")
 
         src_db = MongoClient(SOURCE_URI)[DB_NAME]
         dst_db = MongoClient(BACKUP_URI)[DB_NAME]
 
-        total_docs = 0
-        total_bytes = 0
+        total_size = 0
+        total_collections = 0
 
-        for col in src_db.list_collection_names():
-            docs = list(src_db[col].find())
-            dst_db[col].delete_many({})
+        for col_name in src_db.list_collection_names():
+            src_col = src_db[col_name]
+            dst_col = dst_db[col_name]
+
+            docs = list(src_col.find())
+            dst_col.delete_many({})
+
             if docs:
-                dst_db[col].insert_many(docs)
-                total_docs += len(docs)
-                total_bytes += calc_size(docs)
+                dst_col.insert_many(docs)
+                total_size += calc_size(docs)
+
+            total_collections += 1
 
         await message.reply_text(
-            "✅ BACKUP COMPLETED\n\n"
-            f"📂 DB: `{DB_NAME}`\n"
-            f"📄 Docs: `{total_docs}`\n"
-            f"💾 Size: `{total_bytes/1024:.2f} KB`"
+            f"✅ **Backup Completed!**\n\n"
+            f"📦 Collections: `{total_collections}`\n"
+            f"💾 Size: `{total_size / 1024:.2f} KB`"
         )
 
     except Exception as e:
-        await message.reply_text(f"❌ Backup failed:\n`{e}`")
+        await message.reply_text(f"❌ **Backup failed**\n`{e}`")
 
+# ─────────────────────────────
+# RESTORE COMMAND
+# ─────────────────────────────
 
-# ───────── RESTORE (ALL CHATS) ─────────
-@app.on_message(
-    filters.command("restoredb") &
-    filters.user(OWNER_ID)
-)
+@app.on_message(filters.command("restoredb") & filters.user(OWNER_ID))
 async def restore_db(_, message):
-    if not check_env():
-        return await message.reply_text("❌ ENV variables missing")
-
     try:
-        await message.reply_text("⚠️ Restoring database...")
+        await message.reply_text("⏳ **Restoring database from backup...**")
 
         src_db = MongoClient(BACKUP_URI)[DB_NAME]
         dst_db = MongoClient(SOURCE_URI)[DB_NAME]
 
-        total_docs = 0
+        total_collections = 0
 
-        for col in src_db.list_collection_names():
-            docs = list(src_db[col].find())
-            dst_db[col].delete_many({})
+        for col_name in src_db.list_collection_names():
+            src_col = src_db[col_name]
+            dst_col = dst_db[col_name]
+
+            docs = list(src_col.find())
+            dst_col.delete_many({})
+
             if docs:
-                dst_db[col].insert_many(docs)
-                total_docs += len(docs)
+                dst_col.insert_many(docs)
+
+            total_collections += 1
 
         await message.reply_text(
-            "✅ RESTORE COMPLETED\n\n"
-            f"📄 Documents restored: `{total_docs}`"
+            f"✅ **Restore Completed!**\n\n"
+            f"📦 Collections Restored: `{total_collections}`"
         )
 
     except Exception as e:
-        await message.reply_text(f"❌ Restore failed:\n`{e}`")l
+        await message.reply_text(f"❌ **Restore failed**\n`{e}`")
