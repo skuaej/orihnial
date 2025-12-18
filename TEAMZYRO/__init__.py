@@ -1,86 +1,97 @@
-# ------------------------------ IMPORTS ---------------------------------
-import logging
+# ============================== IMPORTS ==============================
 import os
 import asyncio
+import logging
 
 from motor.motor_asyncio import AsyncIOMotorClient
-from pyrogram import Client
+from pyrogram import Client, filters
+from pyrogram.types import Message
 from aiohttp import web
 
-# --------------------------- LOGGING SETUP ------------------------------
+# ============================== LOGGING ===============================
 logging.basicConfig(
     level=logging.INFO,
     format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
-    datefmt="%d-%b-%y %H:%M:%S",
 )
+LOGGER = logging.getLogger("TEAMZYRO")
 
-logging.getLogger("httpx").setLevel(logging.ERROR)
-logging.getLogger("pyrogram").setLevel(logging.ERROR)
-
-def LOGGER(name: str) -> logging.Logger:
-    return logging.getLogger(name)
-
-# ---------------------------- ENV CONFIG --------------------------------
+# ============================== ENV ==================================
 API_ID = int(os.getenv("API_ID"))
 API_HASH = os.getenv("API_HASH")
-TOKEN = os.getenv("TOKEN")
+BOT_TOKEN = os.getenv("TOKEN")
 MONGO_URL = os.getenv("MONGO_URL")
-
 PORT = int(os.getenv("PORT", 8000))
 
-SUDO = [int(x) for x in os.getenv("SUDO", "").split(",") if x.strip().isdigit()]
+SUDO = [int(x) for x in os.getenv("SUDO", "").split(",") if x.isdigit()]
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
-# ---------------------------- PYROGRAM ----------------------------------
-ZYRO = Client(
-    name="ZYRO",
+# ============================== PYROGRAM ==============================
+app = Client(
+    "TEAMZYRO",
     api_id=API_ID,
     api_hash=API_HASH,
-    bot_token=TOKEN,
+    bot_token=BOT_TOKEN,
 )
 
-# -------------------------- DATABASE SETUP ------------------------------
+# ============================== DATABASE ==============================
 mongo = AsyncIOMotorClient(MONGO_URL)
 db = mongo["hinata_waifu"]
 
 user_collection = db["gaming_user_collection"]
-collection = db["gaming_anime_characters"]
+char_collection = db["gaming_anime_characters"]
 
-# -------------------------- GLOBAL STATE --------------------------------
+# ============================== GLOBALS ===============================
 locks = {}
-message_counts = {}
 user_cooldowns = {}
 
-# -------------------------- LOAD MODULES --------------------------------
+# ============================== BASIC TEST ============================
+@app.on_message(filters.command("ping"))
+async def ping(_, message: Message):
+    await message.reply_text("🏓 Pong!", parse_mode=None)
+
+# ============================== SAFE START ============================
+@app.on_message(filters.command("start"))
+async def start(_, message: Message):
+    await message.reply_text(
+        "✅ Bot is running successfully.",
+        parse_mode=None
+    )
+
+# ============================== LOAD YOUR MODULES =====================
 from TEAMZYRO.unit.zyro_ban import *
 from TEAMZYRO.unit.zyro_sudo import *
 from TEAMZYRO.unit.zyro_react import *
 from TEAMZYRO.unit.zyro_log import *
 from TEAMZYRO.unit.zyro_send_img import *
 from TEAMZYRO.unit.zyro_rarity import *
+from TEAMZYRO.modules.check import *
+from TEAMZYRO.modules.start import *
+from TEAMZYRO.modules.harem import *
+from TEAMZYRO.modules.guess import *
+from TEAMZYRO.modules.balance import *
+from TEAMZYRO.modules.stats import *
+from TEAMZYRO.modules.shop import *
+from TEAMZYRO.modules.transfer import *
 
-# ---------------------- KOYEB HTTP KEEP-ALIVE ---------------------------
+# ============================== KOYEB HTTP ============================
 async def health(request):
     return web.Response(text="OK")
 
 async def start_web():
-    app = web.Application()
-    app.router.add_get("/", health)
-
-    runner = web.AppRunner(app)
+    web_app = web.Application()
+    web_app.router.add_get("/", health)
+    runner = web.AppRunner(web_app)
     await runner.setup()
-
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
+    LOGGER.info(f"🌐 HTTP server running on port {PORT}")
 
-    LOGGER("WEB").info(f"HTTP server running on port {PORT}")
-
-# ----------------------------- MAIN ------------------------------------
+# ============================== MAIN =================================
 async def main():
     await start_web()
-    await ZYRO.start()
-    LOGGER("BOT").info("Bot started successfully")
-    await asyncio.Event().wait()  # keep process alive forever
+    await app.start()
+    LOGGER.info("🤖 Bot started successfully")
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
     asyncio.run(main())
