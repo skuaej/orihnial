@@ -1,4 +1,3 @@
-
 import asyncio
 import random
 from datetime import datetime, timedelta
@@ -23,10 +22,6 @@ RARITY_SUCCESS = {
 }
 
 
-# ─────────────────────────────
-# RARITY ROLL (DISPLAY ONLY)
-# ─────────────────────────────
-
 def roll_rarity():
     r = random.randint(1, 100)
     if r <= 40:
@@ -44,20 +39,19 @@ async def send_preview(message, mode):
     user_id = message.from_user.id
     now = datetime.utcnow()
 
-    user = await user_collection.find_one({"id": user_id}) or {
-        "id": user_id,
-        "characters": [],
-        "harem": [],
-        "last_smash_time": None,
-        "last_propose_time": None,
-        "pending_action": None
-    }
+    user = await user_collection.find_one({"id": user_id}) or {}
 
-    # 🚫 BLOCK if pending action exists
-    if user.get("pending_action"):
+    # 🔒 MODE-WISE PENDING CHECK
+    if mode == "smash" and user.get("pending_smash"):
         return await message.reply_text(
-            f"❌ You already have a **{user['pending_action']['mode'].upper()}** pending.\n"
-            f"➡️ First cancel ❌ or confirm ✅ it."
+            "❌ You already have a **SMASH** pending.\n"
+            "➡️ First cancel ❌ or confirm ✅ it."
+        )
+
+    if mode == "propose" and user.get("pending_propose"):
+        return await message.reply_text(
+            "❌ You already have a **PROPOSE** pending.\n"
+            "➡️ First cancel ❌ or confirm ✅ it."
         )
 
     last_time = user.get("last_smash_time" if mode == "smash" else "last_propose_time")
@@ -70,11 +64,10 @@ async def send_preview(message, mode):
             f"⏳ Wait `{m}m {s}s` before using /{mode} again."
         )
 
-    # 🎲 Dice animation
     await bot.send_dice(message.chat.id, "🎲")
     await asyncio.sleep(2)
 
-    rolled_rarity = roll_rarity()
+    rarity = roll_rarity()
 
     char = await collection.aggregate([
         {"$match": {"img_url": {"$exists": True, "$ne": ""}}},
@@ -86,31 +79,30 @@ async def send_preview(message, mode):
 
     char = char[0]
 
-    # ✅ SAVE PENDING ACTION
+    # ✅ SAVE FULL CHARACTER (NO ID LOOKUP LATER)
+    field = "pending_smash" if mode == "smash" else "pending_propose"
     await user_collection.update_one(
         {"id": user_id},
-        {"$set": {
-            "pending_action": {
-                "mode": mode,
-                "char_id": char.get("id"),
-                "time": now
-            }
-        }},
+        {"$set": {field: {
+            "char": char,
+            "rarity": rarity,
+            "time": now
+        }}},
         upsert=True
     )
 
     caption = (
-        f"👤 **Name:** `{char.get('name','Unknown')}`\n"
-        f"📺 **Anime:** `{char.get('anime','Unknown')}`\n"
+        f"👤 **Name:** `{char.get('name')}`\n"
+        f"📺 **Anime:** `{char.get('anime')}`\n"
         f"🆔 **ID:** `{char.get('id')}`\n"
-        f"⭐ **Rarity:** `{rolled_rarity}`\n\n"
+        f"⭐ **Rarity:** `{rarity}`\n\n"
         f"❓ Do you want to **{mode.upper()}**?"
     )
 
     keyboard = InlineKeyboardMarkup(
         [[
-            InlineKeyboardButton("✅ Yes", callback_data=f"confirm_{mode}_{char['id']}_{rolled_rarity}"),
-            InlineKeyboardButton("❌ Cancel", callback_data="cancel_action")
+            InlineKeyboardButton("✅ Yes", callback_data=f"confirm_{mode}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{mode}")
         ]]
     )
 
@@ -136,26 +128,29 @@ async def propose_cmd(_, message):
 
 
 # ─────────────────────────────
-# CONFIRM CALLBACK
+# CONFIRM
 # ─────────────────────────────
 
 @bot.on_callback_query(filters.regex("^confirm_"))
 async def confirm_action(_, cq: CallbackQuery):
-    _, mode, char_id, rarity = cq.data.split("_")
+    mode = cq.data.split("_")[1]
     user_id = cq.from_user.id
     now = datetime.utcnow()
 
-    char = await collection.find_one({"id": int(char_id)})
-    if not char:
-        return await cq.answer("Character not found", show_alert=True)
+    field = "pending_smash" if mode == "smash" else "pending_propose"
+    user = await user_collection.find_one({"id": user_id})
+
+    data = user.get(field)
+    if not data:
+        return await cq.answer("No pending action.", show_alert=True)
+
+    char = data["char"]
+    rarity = data["rarity"]
 
     success = random.randint(1, 100) <= RARITY_SUCCESS.get(rarity, 50)
 
-    # ❌ FAILURE
     if not success:
-        text = "❌ **Failed!**\nBetter luck next time."
-        await cq.message.edit_caption(text)
-
+        await cq.message.edit_caption("❌ **Failed!** Better luck next time.")
     else:
         if mode == "smash":
             await user_collection.update_one(
@@ -163,44 +158,41 @@ async def confirm_action(_, cq: CallbackQuery):
                 {
                     "$push": {"characters": char},
                     "$set": {"last_smash_time": now}
-                },
-                upsert=True
+                }
             )
-            text = f"🔥 **SMASH SUCCESS!**\n`{char['name']}` added."
-
+            await cq.message.edit_caption(f"🔥 **SMASH SUCCESS!**\n`{char['name']}` added.")
         else:
             await user_collection.update_one(
                 {"id": user_id},
                 {
                     "$push": {"harem": char},
                     "$set": {"last_propose_time": now}
-                },
-                upsert=True
+                }
             )
-            text = f"💖 **PROPOSAL ACCEPTED!**\n`{char['name']}` joined your harem."
+            await cq.message.edit_caption(f"💖 **PROPOSAL ACCEPTED!**\n`{char['name']}` joined your harem.")
 
-        await cq.message.edit_caption(text)
-
-    # ✅ CLEAR PENDING ACTION
     await user_collection.update_one(
         {"id": user_id},
-        {"$unset": {"pending_action": ""}}
+        {"$unset": {field: ""}}
     )
 
     await cq.answer("Done ✅")
 
 
 # ─────────────────────────────
-# CANCEL CALLBACK
+# CANCEL
 # ─────────────────────────────
 
-@bot.on_callback_query(filters.regex("^cancel_action$"))
+@bot.on_callback_query(filters.regex("^cancel_"))
 async def cancel_action(_, cq: CallbackQuery):
+    mode = cq.data.split("_")[1]
     user_id = cq.from_user.id
+
+    field = "pending_smash" if mode == "smash" else "pending_propose"
 
     await user_collection.update_one(
         {"id": user_id},
-        {"$unset": {"pending_action": ""}}
+        {"$unset": {field: ""}}
     )
 
     await cq.message.edit_caption("❌ Action cancelled.")
