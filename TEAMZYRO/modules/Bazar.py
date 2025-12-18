@@ -42,7 +42,7 @@ async def ensure_user(user_id):
         }
         await user_collection.insert_one(user)
 
-    # 🔄 DAILY RESET
+    # 🔄 AUTO DAILY RESET
     if user.get("bazar_date") != today_str():
         await user_collection.update_one(
             {"id": user_id},
@@ -65,17 +65,16 @@ async def ensure_user(user_id):
 
 def roll_rarity():
     roll = random.randint(1, 100)
-
     if roll <= 40:
         return "Low"
     elif roll <= 70:
-        return "Medium"   # Rare
+        return "Medium"
     else:
         return "High"
 
 
 # ─────────────────────────────
-# /bazar COMMAND
+# /bazar
 # ─────────────────────────────
 
 @bot.on_message(filters.command("bazar"))
@@ -84,7 +83,7 @@ async def bazar_cmd(_, message):
 
 
 # ─────────────────────────────
-# SHOW CHARACTER
+# SHOW CHARACTER (ALWAYS FETCH)
 # ─────────────────────────────
 
 async def show_character(user_id, ctx):
@@ -99,51 +98,31 @@ async def show_character(user_id, ctx):
     rarity = roll_rarity()
     price = PRICES[rarity]
 
-    # ❌ PREVENT DUPLICATES
+    # ✅ FETCH WITHOUT BLOCKING DUPLICATES
     character = await collection.aggregate([
         {
             "$match": {
-                "rarity": {"$regex": f"^{rarity}$", "$options": "i"},
-                "id": {"$nin": user["characters"]},
-                "img_url": {"$exists": True, "$ne": ""}
+                "rarity": {"$regex": rarity, "$options": "i"}
             }
         },
         {"$sample": {"size": 1}}
     ]).to_list(1)
 
-    # 🔁 FAILSAFE (TRY OTHER RARITIES)
+    # 🔁 ABSOLUTE FAILSAFE (DB EMPTY)
     if not character:
-        for alt in ["Low", "Medium", "High"]:
-            if alt == rarity:
-                continue
-
-            character = await collection.aggregate([
-                {
-                    "$match": {
-                        "rarity": {"$regex": f"^{alt}$", "$options": "i"},
-                        "id": {"$nin": user["characters"]},
-                        "img_url": {"$exists": True, "$ne": ""}
-                    }
-                },
-                {"$sample": {"size": 1}}
-            ]).to_list(1)
-
-            if character:
-                rarity = alt
-                price = PRICES[rarity]
-                break
-
-    if not character:
-        return await ctx.reply_text("❌ No new characters available.")
+        return await ctx.reply_text("❌ Character database is empty.")
 
     char = character[0]
+    owned = char["id"] in user["characters"]
 
     keyboard = InlineKeyboardMarkup(
         [
             [
                 InlineKeyboardButton(
-                    "🛒 BUY",
-                    callback_data=f"bazar_buy_{char['id']}_{rarity}"
+                    "❌ OWNED" if owned else "🛒 BUY",
+                    callback_data="owned"
+                    if owned
+                    else f"bazar_buy_{char['id']}_{rarity}"
                 ),
                 InlineKeyboardButton(
                     "➡️ NEXT",
@@ -203,7 +182,10 @@ async def bazar_buy(_, cq: CallbackQuery):
         return await cq.answer("❌ Not enough coins!", show_alert=True)
 
     if char_id in user["characters"]:
-        return await cq.answer("⚠️ You already own this character!", show_alert=True)
+        return await cq.answer(
+            "⚠️ You already own this character!",
+            show_alert=True
+        )
 
     if user["bazar_count"] >= DAILY_LIMIT:
         return await cq.answer("🛑 Daily limit reached!", show_alert=True)
@@ -222,3 +204,12 @@ async def bazar_buy(_, cq: CallbackQuery):
     )
 
     await cq.answer("✅ Character purchased!", show_alert=True)
+
+
+# ─────────────────────────────
+# OWNED BUTTON HANDLER
+# ─────────────────────────────
+
+@bot.on_callback_query(filters.regex("^owned$"))
+async def owned_cb(_, cq: CallbackQuery):
+    await cq.answer("You already own this character.", show_alert=True)
