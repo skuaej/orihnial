@@ -83,7 +83,7 @@ def roll_rarity():
 # /bazar COMMAND
 # ─────────────────────────────
 
-@bot.on_message(filters.command("bazar"))
+@bot.on_message(filters.command("store"))
 async def bazar_cmd(_, message):
     await show_character(message.from_user.id, message, edit=False)
 
