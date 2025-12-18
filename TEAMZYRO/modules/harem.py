@@ -1,220 +1,238 @@
-# ===============================
-# HAREM / COLLECTION MODULE
-# ===============================
-
-from TEAMZYRO import app, user_collection, collection, rarity_map2
+from TEAMZYRO import *
 from pyrogram import filters, enums
 from pyrogram.types import (
     InlineKeyboardMarkup,
     InlineKeyboardButton,
     InputMediaPhoto,
-    CallbackQuery,
-    Message
 )
 from itertools import groupby
-from html import escape
 import math
 import random
 import asyncio
+from html import escape
 
 
-# ──────────────────────────────
-# SAFE FETCH USER CHARACTERS
-# ──────────────────────────────
+# ───────────────────────────────
+# HELPER
+# ───────────────────────────────
 async def fetch_user_characters(user_id: int):
     user = await user_collection.find_one({"id": user_id})
+    if not user or not user.get("characters"):
+        return None, "You have not guessed any characters yet."
 
-    if not user:
-        return [], "You have not guessed any characters yet."
+    chars = [c for c in user["characters"] if isinstance(c, dict) and "id" in c]
+    if not chars:
+        return None, "No valid characters found."
 
-    chars = user.get("characters")
-
-    # 🔥 MAIN FIX — characters must be list
-    if not isinstance(chars, list):
-        await user_collection.update_one(
-            {"id": user_id},
-            {"$set": {"characters": []}}
-        )
-        return [], "Your collection was corrupted and has been reset."
-
-    characters = [c for c in chars if isinstance(c, dict) and "id" in c]
-
-    if not characters:
-        return [], "No valid characters found in your collection."
-
-    return characters, None
+    return chars, None
 
 
-# ──────────────────────────────
+# ───────────────────────────────
 # /harem & /collection
-# ──────────────────────────────
+# ───────────────────────────────
 @app.on_message(filters.command(["harem", "collection"]))
-async def harem_handler(_, message: Message):
+async def harem_handler(client, message):
     user_id = message.from_user.id
+    page = 0
+
     user = await user_collection.find_one({"id": user_id})
     filter_rarity = user.get("filter_rarity") if user else None
 
-    msg = await display_harem(
-        message,
+    sent = await display_harem(
+        client=client,
+        message=message,
         user_id=user_id,
-        page=0,
+        page=page,
         filter_rarity=filter_rarity,
         is_initial=True
     )
 
-    if msg:
+    if sent:
         await asyncio.sleep(180)
-        await msg.delete()
+        await sent.delete()
 
 
-# ──────────────────────────────
-# DISPLAY HAREM
-# ──────────────────────────────
-async def display_harem(
-    message: Message,
-    user_id: int,
-    page: int,
-    filter_rarity=None,
-    is_initial=False,
-    callback_query: CallbackQuery = None
-):
+# ───────────────────────────────
+# MAIN DISPLAY
+# ───────────────────────────────
+async def display_harem(client, message, user_id, page, filter_rarity, is_initial, callback_query=None):
     try:
         characters, error = await fetch_user_characters(user_id)
         if error:
             return await message.reply_text(error)
 
-        # 🔥 SORT BEFORE GROUPBY
-        characters = sorted(characters, key=lambda x: (x.get("anime", ""), x["id"]))
+        # 🔴 IMPORTANT FIX
+        characters = sorted(characters, key=lambda x: x.get("id"))
 
-        # FILTER BY RARITY
+        # FILTER
         if filter_rarity:
             characters = [c for c in characters if c.get("rarity") == filter_rarity]
             if not characters:
+                kb = InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("❌ Remove Filter", callback_data=f"remove_filter:{user_id}")]]
+                )
                 return await message.reply_text(
-                    f"No characters found with rarity: {filter_rarity}"
+                    f"No characters found for rarity **{filter_rarity}**",
+                    reply_markup=kb
                 )
 
-        # COUNT DUPLICATES
-        characters_sorted = sorted(characters, key=lambda x: x["id"])
-        character_counts = {
-            k: len(list(v))
-            for k, v in groupby(characters_sorted, key=lambda x: x["id"])
-        }
+        # GROUP COUNTS
+        char_counts = {k: len(list(v)) for k, v in groupby(characters, key=lambda x: x["id"])}
+        unique_chars = list({c["id"]: c for c in characters}.values())
 
-        unique_characters = list(
-            {c["id"]: c for c in characters_sorted}.values()
-        )
-
-        total_pages = max(1, math.ceil(len(unique_characters) / 15))
+        total_pages = max(1, math.ceil(len(unique_chars) / 15))
         page = max(0, min(page, total_pages - 1))
 
-        # HEADER
-        harem_text = (
-            f"<b>{escape(message.from_user.first_name)}'s Harem</b>\n"
-            f"Page {page+1}/{total_pages}\n"
-        )
-
+        text = f"<b>{escape(message.from_user.first_name)}'s Harem</b> "
+        text += f"<b>({page+1}/{total_pages})</b>\n"
         if filter_rarity:
-            harem_text += f"<b>Filter:</b> {filter_rarity}\n"
+            text += f"<b>Filtered:</b> {filter_rarity}\n"
 
-        # PAGE DATA
-        page_chars = unique_characters[page*15:(page+1)*15]
+        page_chars = unique_chars[page*15:(page+1)*15]
 
-        page_chars = sorted(page_chars, key=lambda x: x.get("anime", ""))
-
-        for anime, group in groupby(page_chars, key=lambda x: x.get("anime", "Unknown")):
-            anime_count = await collection.count_documents(
-                {"anime": anime} if isinstance(anime, str) else {}
-            )
-            group = list(group)
-            harem_text += f"\n<b>{anime} {len(group)}/{anime_count}</b>\n"
-
-            for c in group:
+        for anime, chars in groupby(page_chars, key=lambda x: x.get("anime", "Unknown")):
+            chars = list(chars)
+            total = await collection.count_documents({"anime": anime})
+            text += f"\n<b>{anime} {len(chars)}/{total}</b>\n"
+            for c in chars:
+                count = char_counts.get(c["id"], 1)
                 emoji = rarity_map2.get(c.get("rarity"), "")
-                count = character_counts.get(c["id"], 1)
-                harem_text += f"◈⌠{emoji}⌡ {c['id']} {c['name']} ×{count}\n"
+                text += f"◈⌠{emoji}⌡ {c['id']} {c['name']} ×{count}\n"
 
-        # KEYBOARD
+        # BUTTONS
         keyboard = [
             [
-                InlineKeyboardButton(
-                    "Collection",
-                    switch_inline_query_current_chat=f"collection.{user_id}"
-                ),
-                InlineKeyboardButton(
-                    "💌 AMV",
-                    switch_inline_query_current_chat=f"collection.{user_id}.AMV"
-                )
+                InlineKeyboardButton("📦 Collection", switch_inline_query_current_chat=f"collection.{user_id}"),
+                InlineKeyboardButton("💌 AMV", switch_inline_query_current_chat=f"collection.{user_id}.AMV"),
             ]
         ]
 
         nav = []
         if page > 0:
-            nav.append(
-                InlineKeyboardButton("⬅️", callback_data=f"harem:{page-1}:{user_id}:{filter_rarity or 'None'}")
-            )
+            nav.append(InlineKeyboardButton("⬅️", callback_data=f"harem:{page-1}:{user_id}"))
         if page < total_pages - 1:
-            nav.append(
-                InlineKeyboardButton("➡️", callback_data=f"harem:{page+1}:{user_id}:{filter_rarity or 'None'}")
-            )
+            nav.append(InlineKeyboardButton("➡️", callback_data=f"harem:{page+1}:{user_id}"))
         if nav:
             keyboard.append(nav)
 
-        markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # IMAGE PICK
-        image_character = random.choice(characters)
+        image_char = random.choice(characters)
+        media = None
+
+        if image_char.get("img_url"):
+            media = image_char["img_url"]
 
         if is_initial:
-            if image_character.get("img_url"):
+            if media:
                 return await message.reply_photo(
-                    image_character["img_url"],
-                    caption=harem_text,
-                    reply_markup=markup,
+                    photo=media,
+                    caption=text,
+                    reply_markup=reply_markup,
                     parse_mode=enums.ParseMode.HTML
                 )
-            else:
-                return await message.reply_text(
-                    harem_text,
-                    reply_markup=markup,
-                    parse_mode=enums.ParseMode.HTML
-                )
+            return await message.reply_text(text, reply_markup=reply_markup, parse_mode=enums.ParseMode.HTML)
         else:
-            await callback_query.message.edit_text(
-                harem_text,
-                reply_markup=markup,
+            return await callback_query.message.edit_text(
+                text,
+                reply_markup=reply_markup,
                 parse_mode=enums.ParseMode.HTML
             )
 
     except Exception as e:
         print("HAREM ERROR:", e)
-        await message.reply_text("❌ An error occurred. Please try again later.")
+        return await message.reply_text("An error occurred.")
 
 
-# ──────────────────────────────
-# CALLBACK NAVIGATION
-# ──────────────────────────────
+# ───────────────────────────────
+# PAGE CALLBACK
+# ───────────────────────────────
 @app.on_callback_query(filters.regex("^harem:"))
-async def harem_callback(_, cq: CallbackQuery):
-    try:
-        _, page, user_id, rarity = cq.data.split(":")
-        page = int(page)
-        user_id = int(user_id)
-        rarity = None if rarity == "None" else rarity
+async def harem_callback(client, cq):
+    _, page, user_id = cq.data.split(":")
+    page = int(page)
+    user_id = int(user_id)
 
-        if cq.from_user.id != user_id:
-            return await cq.answer("Not your harem!", show_alert=True)
+    if cq.from_user.id != user_id:
+        return await cq.answer("Not your harem!", show_alert=True)
 
-        await display_harem(
-            cq.message,
-            user_id=user_id,
-            page=page,
-            filter_rarity=rarity,
-            is_initial=False,
-            callback_query=cq
-        )
-        await cq.answer()
+    user = await user_collection.find_one({"id": user_id})
+    filter_rarity = user.get("filter_rarity") if user else None
 
-    except Exception as e:
-        print("CALLBACK ERROR:", e)
-        await cq.answer("Error", show_alert=True)
+    await display_harem(
+        client,
+        cq.message,
+        user_id,
+        page,
+        filter_rarity,
+        is_initial=False,
+        callback_query=cq
+    )
+
+
+# ───────────────────────────────
+# /hmode
+# ───────────────────────────────
+@app.on_message(filters.command("hmode"))
+async def hmode(client, message):
+    user_id = message.from_user.id
+    keyboard = []
+    row = []
+
+    for i, (rarity, emoji) in enumerate(rarity_map2.items(), 1):
+        row.append(InlineKeyboardButton(emoji, callback_data=f"set_rarity:{user_id}:{rarity}"))
+        if i % 4 == 0:
+            keyboard.append(row)
+            row = []
+
+    if row:
+        keyboard.append(row)
+
+    keyboard.append([InlineKeyboardButton("All", callback_data=f"set_rarity:{user_id}:None")])
+
+    await message.reply_text(
+        "Select rarity filter:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
+
+# ───────────────────────────────
+# SET RARITY
+# ───────────────────────────────
+@app.on_callback_query(filters.regex("^set_rarity:"))
+async def set_rarity(client, cq):
+    _, user_id, rarity = cq.data.split(":")
+    user_id = int(user_id)
+    rarity = None if rarity == "None" else rarity
+
+    if cq.from_user.id != user_id:
+        return await cq.answer("Not yours!", show_alert=True)
+
+    await user_collection.update_one(
+        {"id": user_id},
+        {"$set": {"filter_rarity": rarity}},
+        upsert=True
+    )
+
+    await cq.answer("Filter updated ✅", show_alert=True)
+    await cq.message.delete()
+
+
+# ───────────────────────────────
+# REMOVE FILTER
+# ───────────────────────────────
+@app.on_callback_query(filters.regex("^remove_filter:"))
+async def remove_filter(client, cq):
+    _, user_id = cq.data.split(":")
+    user_id = int(user_id)
+
+    if cq.from_user.id != user_id:
+        return await cq.answer("Not yours!", show_alert=True)
+
+    await user_collection.update_one(
+        {"id": user_id},
+        {"$set": {"filter_rarity": None}}
+    )
+
+    await cq.answer("Filter removed ✅", show_alert=True)
+    await cq.message.delete()
