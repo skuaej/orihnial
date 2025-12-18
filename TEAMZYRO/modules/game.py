@@ -1,14 +1,13 @@
-
 import time
 import random
 from pyrogram import filters
 from pyrogram.types import Message
-from pyrogram.enums import DiceEmoji
 
 from TEAMZYRO import app, user_collection
 
 # ─── CONFIG ─────────────────────────────
-WIN_RATE = 0.40  # 40%
+WIN_RATE = 0.40
+
 COOLDOWNS = {
     "slot": 30,
     "dice": 20,
@@ -16,19 +15,19 @@ COOLDOWNS = {
     "duel": 30
 }
 
-cooldown_cache = {}
+cooldowns = {}
 
 # ─── HELPERS ────────────────────────────
-def in_cooldown(user_id, cmd):
+def check_cooldown(user_id, cmd):
     now = time.time()
     key = f"{user_id}:{cmd}"
 
-    if key in cooldown_cache:
-        left = COOLDOWNS[cmd] - (now - cooldown_cache[key])
-        if left > 0:
-            return int(left)
+    if key in cooldowns:
+        remaining = COOLDOWNS[cmd] - (now - cooldowns[key])
+        if remaining > 0:
+            return int(remaining)
 
-    cooldown_cache[key] = now
+    cooldowns[key] = now
     return 0
 
 
@@ -44,22 +43,22 @@ async def get_user(user):
     return data
 
 
-async def update_balance(user_id, amount):
+async def change_balance(uid, amount):
     await user_collection.update_one(
-        {"id": user_id},
+        {"id": uid},
         {"$inc": {"balance": amount}},
         upsert=True
     )
 
-# ─── 🎰 SLOT GAME ───────────────────────
+# ─── 🎰 SLOT ────────────────────────────
 @app.on_message(filters.command("slot"))
-async def slot_game(_, message: Message):
-    cd = in_cooldown(message.from_user.id, "slot")
+async def slot(_, message: Message):
+    cd = check_cooldown(message.from_user.id, "slot")
     if cd:
         return await message.reply_text(f"⏳ Cooldown: {cd}s")
 
     if len(message.command) < 2:
-        return await message.reply_text("Usage: `/slot <bet>`")
+        return await message.reply_text("Usage: /slot <bet>")
 
     bet = int(message.command[1])
     user = await get_user(message.from_user)
@@ -67,26 +66,21 @@ async def slot_game(_, message: Message):
     if user["balance"] < bet:
         return await message.reply_text("❌ Insufficient balance")
 
-    dice = await message.reply_dice(DiceEmoji.SLOT_MACHINE)
-    win = random.random() <= WIN_RATE
+    await message.reply_dice("🎰")
 
-    if win:
-        await update_balance(user["id"], bet)
-        await message.reply_text(f"🎉 **You WON!** +{bet} coins")
+    if random.random() <= WIN_RATE:
+        await change_balance(user["id"], bet)
+        await message.reply_text(f"🎉 You WON +{bet} coins")
     else:
-        await update_balance(user["id"], -bet)
-        await message.reply_text(f"💥 **You LOST!** -{bet} coins")
+        await change_balance(user["id"], -bet)
+        await message.reply_text(f"💥 You LOST -{bet} coins")
 
-
-# ─── 🎲 DICE GAME ───────────────────────
+# ─── 🎲 DICE ────────────────────────────
 @app.on_message(filters.command("dice"))
-async def dice_game(_, message: Message):
-    cd = in_cooldown(message.from_user.id, "dice")
+async def dice(_, message: Message):
+    cd = check_cooldown(message.from_user.id, "dice")
     if cd:
         return await message.reply_text(f"⏳ Cooldown: {cd}s")
-
-    if len(message.command) < 2:
-        return await message.reply_text("Usage: `/dice <bet>`")
 
     bet = int(message.command[1])
     user = await get_user(message.from_user)
@@ -94,26 +88,21 @@ async def dice_game(_, message: Message):
     if user["balance"] < bet:
         return await message.reply_text("❌ Insufficient balance")
 
-    dice = await message.reply_dice(DiceEmoji.DICE)
-    win = random.random() <= WIN_RATE
+    await message.reply_dice("🎲")
 
-    if win:
-        await update_balance(user["id"], bet)
-        await message.reply_text(f"🎲 You won **{bet} coins**!")
+    if random.random() <= WIN_RATE:
+        await change_balance(user["id"], bet)
+        await message.reply_text(f"🎲 You won {bet} coins")
     else:
-        await update_balance(user["id"], -bet)
-        await message.reply_text(f"🎲 You lost **{bet} coins**")
+        await change_balance(user["id"], -bet)
+        await message.reply_text(f"🎲 You lost {bet} coins")
 
-
-# ─── 👽 ALIEN GAME ──────────────────────
+# ─── 👽 ALIEN ───────────────────────────
 @app.on_message(filters.command("alien"))
-async def alien_game(_, message: Message):
-    cd = in_cooldown(message.from_user.id, "alien")
+async def alien(_, message: Message):
+    cd = check_cooldown(message.from_user.id, "alien")
     if cd:
         return await message.reply_text(f"⏳ Cooldown: {cd}s")
-
-    if len(message.command) < 2:
-        return await message.reply_text("Usage: `/alien <bet>`")
 
     bet = int(message.command[1])
     user = await get_user(message.from_user)
@@ -121,21 +110,19 @@ async def alien_game(_, message: Message):
     if user["balance"] < bet:
         return await message.reply_text("❌ Insufficient balance")
 
-    dice = await message.reply_dice(DiceEmoji.DART)
-    win = random.random() <= WIN_RATE
+    await message.reply_dice("🎯")
 
-    if win:
-        await update_balance(user["id"], bet)
+    if random.random() <= WIN_RATE:
+        await change_balance(user["id"], bet)
         await message.reply_text(f"👽 Alien spared you! +{bet}")
     else:
-        await update_balance(user["id"], -bet)
+        await change_balance(user["id"], -bet)
         await message.reply_text(f"👽 Alien destroyed you! -{bet}")
 
-
-# ─── ⚔ DUEL GAME ────────────────────────
+# ─── ⚔ DUEL ─────────────────────────────
 @app.on_message(filters.command("duel"))
-async def duel_game(_, message: Message):
-    cd = in_cooldown(message.from_user.id, "duel")
+async def duel(_, message: Message):
+    cd = check_cooldown(message.from_user.id, "duel")
     if cd:
         return await message.reply_text(f"⏳ Cooldown: {cd}s")
 
@@ -143,27 +130,28 @@ async def duel_game(_, message: Message):
         return await message.reply_text("Reply to a user to duel")
 
     bet = int(message.command[1])
+
     p1 = await get_user(message.from_user)
     p2 = await get_user(message.reply_to_message.from_user)
 
     if p1["balance"] < bet or p2["balance"] < bet:
         return await message.reply_text("❌ One player has insufficient balance")
 
-    d1 = random.randint(1, 6)
-    d2 = random.randint(1, 6)
+    r1 = random.randint(1, 6)
+    r2 = random.randint(1, 6)
 
-    if d1 == d2:
-        return await message.reply_text("⚔ Duel Draw!")
+    if r1 == r2:
+        return await message.reply_text("⚔ Duel draw!")
 
-    winner = p1 if d1 > d2 else p2
+    winner = p1 if r1 > r2 else p2
     loser = p2 if winner == p1 else p1
 
-    await update_balance(winner["id"], bet)
-    await update_balance(loser["id"], -bet)
+    await change_balance(winner["id"], bet)
+    await change_balance(loser["id"], -bet)
 
     await message.reply_text(
-        f"⚔ **Duel Result**\n"
-        f"🎲 {p1['first_name']} rolled {d1}\n"
-        f"🎲 {p2['first_name']} rolled {d2}\n\n"
+        f"⚔ Duel Result\n"
+        f"{p1['first_name']} rolled {r1}\n"
+        f"{p2['first_name']} rolled {r2}\n\n"
         f"🏆 Winner: {winner['first_name']} +{bet}"
     )
