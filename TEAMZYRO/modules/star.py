@@ -6,7 +6,7 @@ from pyrogram import filters
 from pyrogram.types import Message
 from TEAMZYRO import app
 
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+OWNER_ID = int(os.getenv("OWNER_ID", "7850114307"))
 
 def system_details():
     proc = psutil.Process(os.getpid())
