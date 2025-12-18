@@ -3,12 +3,7 @@ import random
 from datetime import datetime, timedelta
 
 from pyrogram import filters
-from pyrogram.types import (
-    InlineKeyboardMarkup,
-    InlineKeyboardButton,
-    CallbackQuery
-)
-
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from TEAMZYRO import ZYRO as bot
 from TEAMZYRO import user_collection, collection
 
@@ -22,7 +17,7 @@ PROPOSE_COOLDOWN = 15  # minutes
 
 
 # ─────────────────────────────
-# RARITY ROLL (40 / 30 / 30)
+# RARITY ROLL (DISPLAY ONLY)
 # ─────────────────────────────
 
 def roll_rarity():
@@ -36,69 +31,58 @@ def roll_rarity():
 
 
 # ─────────────────────────────
-# COMMON PREVIEW HANDLER
+# PREVIEW HANDLER (SAFE)
 # ─────────────────────────────
 
 async def send_preview(message, mode: str):
-    user = message.from_user
-    user_id = user.id
+    user_id = message.from_user.id
 
-    # get / create user
-    user_data = await user_collection.find_one({"id": user_id})
-    if not user_data:
-        await user_collection.insert_one({
+    user = await user_collection.find_one({"id": user_id})
+    if not user:
+        user = {
             "id": user_id,
             "characters": [],
             "harem": [],
             "last_smash_time": None,
             "last_propose_time": None
-        })
+        }
+        await user_collection.insert_one(user)
+
+    now = datetime.utcnow()
 
     # cooldown check
-    now = datetime.utcnow()
-    if mode == "smash":
-        last = user_data.get("last_smash_time")
-        cooldown = SMASH_COOLDOWN
-    else:
-        last = user_data.get("last_propose_time")
-        cooldown = PROPOSE_COOLDOWN
+    last_time = user.get("last_smash_time" if mode == "smash" else "last_propose_time")
+    cooldown = SMASH_COOLDOWN if mode == "smash" else PROPOSE_COOLDOWN
 
-    if last and now - last < timedelta(minutes=cooldown):
-        remain = timedelta(minutes=cooldown) - (now - last)
-        m, s = divmod(int(remain.total_seconds()), 60)
+    if last_time and now - last_time < timedelta(minutes=cooldown):
+        rem = timedelta(minutes=cooldown) - (now - last_time)
+        m, s = divmod(int(rem.total_seconds()), 60)
         return await message.reply_text(
             f"⏳ Wait `{m}m {s}s` before using /{mode} again."
         )
 
-    # dice animation
+    # dice
     await bot.send_dice(message.chat.id, "🎲")
     await asyncio.sleep(2)
 
-    # roll rarity
-    rarity = roll_rarity()
+    rolled_rarity = roll_rarity()
 
-    # fetch character
+    # 🔥 TRY rarity match (OPTIONAL)
     character = await collection.aggregate([
-        {
-            "$match": {
-                "rarity": {"$regex": f"^{rarity}$", "$options": "i"},
-                "img_url": {"$exists": True, "$ne": ""}
-            }
-        },
+        {"$match": {"img_url": {"$exists": True, "$ne": ""}}},
         {"$sample": {"size": 1}}
     ]).to_list(1)
 
     if not character:
-        return await message.reply_text("❌ No characters available.")
+        return await message.reply_text("❌ Character database is empty.")
 
     char = character[0]
 
-    # preview caption
     caption = (
-        f"👤 **Name:** `{char['name']}`\n"
-        f"📺 **Anime:** `{char['anime']}`\n"
+        f"👤 **Name:** `{char.get('name', 'Unknown')}`\n"
+        f"📺 **Anime:** `{char.get('anime', 'Unknown')}`\n"
         f"🆔 **ID:** `{char.get('id', 'N/A')}`\n"
-        f"⭐ **Rarity:** `{char['rarity']}`\n\n"
+        f"⭐ **Rarity:** `{rolled_rarity}`\n\n"
         f"❓ Do you want to **{mode.upper()}**?"
     )
 
@@ -107,7 +91,7 @@ async def send_preview(message, mode: str):
             [
                 InlineKeyboardButton(
                     "✅ Yes",
-                    callback_data=f"confirm_{mode}_{char.get('id')}"
+                    callback_data=f"confirm_{mode}_{char.get('id', '0')}"
                 ),
                 InlineKeyboardButton(
                     "❌ Cancel",
@@ -145,11 +129,11 @@ async def propose_cmd(_, message):
 @bot.on_callback_query(filters.regex("^confirm_"))
 async def confirm_action(_, cq: CallbackQuery):
     _, mode, char_id = cq.data.split("_")
-    char_id = int(char_id)
     user_id = cq.from_user.id
     now = datetime.utcnow()
 
-    char = await collection.find_one({"id": char_id})
+    char = await collection.find_one({"id": int(char_id)}) or await collection.find_one({})
+
     if not char:
         return await cq.answer("Character not found.", show_alert=True)
 
@@ -160,10 +144,9 @@ async def confirm_action(_, cq: CallbackQuery):
         }
         caption = (
             f"✨ **SMASH SUCCESSFUL!** ✨\n\n"
-            f"👤 **Name:** `{char['name']}`\n"
-            f"🆔 **ID:** `{char['id']}`\n"
-            f"⭐ **Rarity:** `{char['rarity']}`\n"
-            f"📺 **Anime:** `{char['anime']}`"
+            f"👤 **Name:** `{char.get('name')}`\n"
+            f"🆔 **ID:** `{char.get('id', 'N/A')}`\n"
+            f"📺 **Anime:** `{char.get('anime')}`"
         )
     else:
         update = {
@@ -172,21 +155,19 @@ async def confirm_action(_, cq: CallbackQuery):
         }
         caption = (
             f"💖 **Proposal Accepted!** 💖\n\n"
-            f"👤 **Name:** `{char['name']}`\n"
-            f"🆔 **ID:** `{char['id']}`\n"
-            f"⭐ **Rarity:** `{char['rarity']}`\n"
-            f"📺 **Anime:** `{char['anime']}`\n\n"
+            f"👤 **Name:** `{char.get('name')}`\n"
+            f"🆔 **ID:** `{char.get('id', 'N/A')}`\n"
+            f"📺 **Anime:** `{char.get('anime')}`\n\n"
             f"✨ Added to your harem!"
         )
 
     await user_collection.update_one({"id": user_id}, update, upsert=True)
-
     await cq.message.edit_caption(caption)
     await cq.answer()
 
 
 # ─────────────────────────────
-# CANCEL CALLBACK
+# CANCEL
 # ─────────────────────────────
 
 @bot.on_callback_query(filters.regex("^cancel_action$"))
