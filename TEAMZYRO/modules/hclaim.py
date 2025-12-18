@@ -1,105 +1,167 @@
 import asyncio
-from pyrogram import Client, filters, types as t
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import random
 from datetime import datetime, timedelta
+
+from pyrogram import filters, types as t
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from TEAMZYRO import ZYRO as bot
-from TEAMZYRO import user_collection, collection, user_nguess_progress, user_guess_progress, SUPPORT_CHAT_ID as chat
+from TEAMZYRO import user_collection, collection
+
+# ─────────────────────────────
+# CONFIG
+# ─────────────────────────────
+
+SUPPORT_CHANNEL = "cute_character_support"  # without @
+
+RARITY_PROBABILITY = {
+    "Low": 50,
+    "Medium": 30,
+    "High": 20
+}
 
 claim_lock = {}
 
-# Helper function to format time remaining until next claim
-async def format_time_delta(delta):
-    seconds = delta.total_seconds()
+
+# ─────────────────────────────
+# HELPERS
+# ─────────────────────────────
+
+def roll_rarity():
+    roll = random.randint(1, 100)
+    upto = 0
+    for rarity, chance in RARITY_PROBABILITY.items():
+        upto += chance
+        if roll <= upto:
+            return rarity
+    return "Low"
+
+
+def format_time_delta(delta):
+    seconds = int(delta.total_seconds())
     hours, remainder = divmod(seconds, 3600)
     minutes, seconds = divmod(remainder, 60)
-    return f"{int(hours)}h {int(minutes)}m {int(seconds)}s" if hours or minutes or seconds else "0s"
+    return f"{hours}h {minutes}m {seconds}s"
 
-# Fetch unique characters not yet claimed by the user
-async def get_unique_characters(user_id, target_rarities=['⚪️ Common', '🟠 Medium', '🔴 High']):
+
+async def user_joined_channel(user_id):
     try:
-        # Get the already claimed character ids
-        user_data = await user_collection.find_one({'id': user_id}, {'characters.id': 1})
-        claimed_ids = [char['id'] for char in user_data.get('characters', [])] if user_data else []
+        member = await bot.get_chat_member(f"@{SUPPORT_CHANNEL}", user_id)
+        return member.status in ("member", "administrator", "creator")
+    except:
+        return False
 
-        pipeline = [
-            {'$match': {'rarity': {'$in': target_rarities}, 'id': {'$nin': claimed_ids}}},
-            {'$sample': {'size': 1}}  # Randomly sample one character
-        ]
-        cursor = collection.aggregate(pipeline)
-        characters = await cursor.to_list(length=None)
-        return characters if characters else []
-    except Exception as e:
-        print(f"Error retrieving unique characters: {e}")
-        return []
 
-# Command handler for the daily claim (mclaim)
+async def get_unique_character(user_id, rarity):
+    user_data = await user_collection.find_one(
+        {"id": user_id},
+        {"characters.id": 1}
+    )
+    claimed_ids = [c["id"] for c in user_data.get("characters", [])] if user_data else []
+
+    character = await collection.aggregate([
+        {
+            "$match": {
+                "rarity": {"$regex": f"^{rarity}$", "$options": "i"},
+                "id": {"$nin": claimed_ids},
+                "img_url": {"$exists": True, "$ne": ""}
+            }
+        },
+        {"$sample": {"size": 1}}
+    ]).to_list(1)
+
+    return character[0] if character else None
+
+
+# ─────────────────────────────
+# CLAIM COMMAND
+# ─────────────────────────────
+
 @bot.on_message(filters.command(["hclaim", "claim"]))
-async def mclaim(_, message: t.Message):
+async def claim_cmd(_, message: t.Message):
     user_id = message.from_user.id
     mention = message.from_user.mention
-    today = datetime.utcnow().date()
 
-    # Prevent multiple claims at the same time
     if user_id in claim_lock:
-        await message.reply_text("Your claim request is already being processed. Please wait.")
-        return
+        return await message.reply_text("⏳ Please wait, your claim is being processed.")
 
     claim_lock[user_id] = True
+
     try:
-        # Ensure the user is in the correct chat
-        if str(message.chat.id) != chat:
-            join_button = InlineKeyboardMarkup([[InlineKeyboardButton("Join Here", url="https://t.me/+V-_VFMB8nV40YzJl")]])
+        # ─── Channel join check ───────────────────────────
+        if not await user_joined_channel(user_id):
+            join_btn = InlineKeyboardMarkup(
+                [[InlineKeyboardButton(
+                    "🔔 Join Channel",
+                    url=f"https://t.me/{SUPPORT_CHANNEL}"
+                )]]
+            )
             return await message.reply_text(
-                "🔔 ᴊᴏɪɴ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ ᴛᴏ ᴄʟᴀɪᴍ ʏᴏᴜʀ ᴅᴀɪʟʏ ᴄʜᴀʀᴀᴄᴛᴇʀ 🔔",
-                reply_markup=join_button
+                "🔒 **You must join the support channel to claim your daily character.**",
+                reply_markup=join_btn
             )
 
-        # Fetch user data or create a new user if not found
-        user_data = await user_collection.find_one({'id': user_id})
-        if not user_data:
-            user_data = {
-                'id': user_id,
-                'username': message.from_user.username,
-                'characters': [],
-                'last_daily_reward': None
+        # ─── Get / create user ────────────────────────────
+        user = await user_collection.find_one({"id": user_id})
+        if not user:
+            user = {
+                "id": user_id,
+                "username": message.from_user.username,
+                "characters": [],
+                "last_daily_reward": None
             }
-            await user_collection.insert_one(user_data)
+            await user_collection.insert_one(user)
 
-        # Check if the user has already claimed today
-        last_claimed_date = user_data.get('last_daily_reward')
-        if last_claimed_date and last_claimed_date.date() == datetime.utcnow().date():
-            remaining_time = timedelta(days=1) - (datetime.utcnow() - last_claimed_date)
-            formatted_time = await format_time_delta(remaining_time)
-            return await message.reply_text(f"⏳ *You've already claimed today! Next reward in:* `{formatted_time}`")
+        # ─── Daily cooldown (24h) ─────────────────────────
+        last = user.get("last_daily_reward")
+        if last and datetime.utcnow() - last < timedelta(days=1):
+            remaining = timedelta(days=1) - (datetime.utcnow() - last)
+            return await message.reply_text(
+                f"⏳ **You've already claimed today!**\n"
+                f"Next claim in: `{format_time_delta(remaining)}`"
+            )
 
-        # Fetch a unique character for the user
-        unique_characters = await get_unique_characters(user_id)
-        if not unique_characters:
-            return await message.reply_text("🚫 *No characters available to claim at the moment. Please try again later.*")
+        # ─── Roll rarity ──────────────────────────────────
+        rarity = roll_rarity()
 
-        # Update user data with the new character and claim time
+        # ─── Fetch character ──────────────────────────────
+        char = await get_unique_character(user_id, rarity)
+
+        # Fallback if rarity pool empty
+        if not char:
+            char = await collection.aggregate([
+                {"$match": {"img_url": {"$exists": True, "$ne": ""}}},
+                {"$sample": {"size": 1}}
+            ]).to_list(1)
+            char = char[0] if char else None
+
+        if not char:
+            return await message.reply_text("❌ No characters available right now.")
+
+        # ─── Update user ──────────────────────────────────
         await user_collection.update_one(
-            {'id': user_id},
-            {'$push': {'characters': {'$each': unique_characters}}, '$set': {'last_daily_reward': datetime.utcnow()}}
+            {"id": user_id},
+            {
+                "$push": {"characters": char},
+                "$set": {"last_daily_reward": datetime.utcnow()}
+            }
         )
 
-        # Send the character's image and info
-        for character in unique_characters:
-            await message.reply_photo(
-                photo=character['img_url'],
-                caption=(
-                    f"🎊 ℂ𝕆ℕ𝔾ℝ𝔸𝕋𝕌𝕃𝔸𝕋𝕀𝕆ℕ𝕊 {mention}! 🎉\n"
-                    f"🌸 𝐍𝐚𝐦𝐞 : {character['name']}\n"
-                    f"🌈 𝐑𝐚𝐫𝐢𝐭𝐲 : {character['rarity']}\n"
-                    f"⛩️ 𝐀𝐧𝐢𝐦𝐞 : {character['anime']}\n"
-                    f"💫 ℭ𝔬𝔪𝔢 𝔟𝔞𝔠𝔨 𝔱𝔬𝔪𝔬𝔯𝔯𝔬𝔴 𝔣𝔬𝔯 𝔞𝔫𝔬𝔱𝔥𝔢𝔯 𝔠𝔩𝔞𝔦𝔪!"
-                )
+        # ─── Send reward ──────────────────────────────────
+        await message.reply_photo(
+            photo=char["img_url"],
+            caption=(
+                f"🎊 **CONGRATULATIONS {mention}!** 🎉\n\n"
+                f"👤 **Name:** `{char['name']}`\n"
+                f"🆔 **ID:** `{char.get('id','N/A')}`\n"
+                f"⭐ **Rarity:** `{char['rarity']}`\n"
+                f"📺 **Anime:** `{char['anime']}`\n\n"
+                f"⏰ Come back tomorrow for another claim!"
             )
+        )
 
     except Exception as e:
-        print(f"Error in mclaim command: {e}")
-        await message.reply_text("❌ *An unexpected error occurred.*")
+        print("CLAIM ERROR:", e)
+        await message.reply_text("❌ An unexpected error occurred.")
 
     finally:
-        # Remove the user from claim lock to allow future claims
-        claim_lock.pop(user_id, None)
+        claim_lock.pop(user_id, None)o
