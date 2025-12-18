@@ -1,3 +1,4 @@
+
 import random
 from datetime import datetime
 
@@ -79,7 +80,7 @@ def roll_rarity():
 
 
 # ─────────────────────────────
-# /bazar
+# /bazar COMMAND
 # ─────────────────────────────
 
 @bot.on_message(filters.command("bazar"))
@@ -106,6 +107,7 @@ async def show_character(user_id, ctx, edit=False):
     rarity = roll_rarity()
     price = PRICES[rarity]
 
+    # ✅ Always fetch from DB (duplicates allowed to show)
     character = await collection.aggregate([
         {
             "$match": {
@@ -168,17 +170,17 @@ async def show_character(user_id, ctx, edit=False):
 
 
 # ─────────────────────────────
-# NEXT BUTTON (MANUAL)
+# NEXT BUTTON (SILENT, EDIT SAME MESSAGE)
 # ─────────────────────────────
 
 @bot.on_callback_query(filters.regex("^bazar_next$"))
 async def bazar_next(_, cq: CallbackQuery):
-    await cq.answer()
+    await cq.answer()  # ✅ silent (no top bar message)
     await show_character(cq.from_user.id, cq, edit=True)
 
 
 # ─────────────────────────────
-# BUY BUTTON (AUTO NEXT)
+# BUY BUTTON
 # ─────────────────────────────
 
 @bot.on_callback_query(filters.regex("^bazar_buy_"))
@@ -214,9 +216,7 @@ async def bazar_buy(_, cq: CallbackQuery):
         }
     )
 
-    # ✅ SILENT ACK + AUTO NEXT
-    await cq.answer()
-    await show_character(cq.from_user.id, cq, edit=True)
+    await cq.answer("✅ Character purchased!", show_alert=True)
 
 
 # ─────────────────────────────
