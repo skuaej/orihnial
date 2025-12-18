@@ -11,7 +11,7 @@ from TEAMZYRO import user_collection, collection
 # CONFIG
 # ─────────────────────────────
 
-SUPPORT_CHAT_ID = -1003555329185  # 🔴 PUT YOUR PRIVATE GROUP ID HERE
+SUPPORT_CHAT_ID = -1003555329185  # ✅ YOUR PRIVATE GROUP ID
 
 RARITY_PROBABILITY = {
     "Low": 50,
@@ -41,14 +41,6 @@ def format_time(delta):
     h, r = divmod(seconds, 3600)
     m, s = divmod(r, 60)
     return f"{h}h {m}m {s}s"
-
-
-async def user_joined_chat(user_id):
-    try:
-        member = await bot.get_chat_member(SUPPORT_CHAT_ID, user_id)
-        return member.status in ("member", "administrator", "creator")
-    except:
-        return False
 
 
 async def get_unique_character(user_id, rarity):
@@ -81,22 +73,26 @@ async def claim_cmd(_, message: t.Message):
     user_id = message.from_user.id
     mention = message.from_user.mention
 
+    # 🔒 MUST BE USED INSIDE PRIVATE GROUP
+    if message.chat.id != SUPPORT_CHAT_ID:
+        btn = InlineKeyboardMarkup(
+            [[InlineKeyboardButton(
+                "🔔 Go to Claim Group",
+                url="https://t.me/cute_character_support"
+            )]]
+        )
+        return await message.reply_text(
+            "🔒 **Daily claim is only available inside the support group.**",
+            reply_markup=btn
+        )
+
     if user_id in claim_lock:
-        return await message.reply_text("⏳ Please wait, your claim is processing.")
+        return await message.reply_text("⏳ Please wait, processing your claim...")
 
     claim_lock[user_id] = True
 
     try:
-        # 🔒 JOIN CHECK (PRIVATE GROUP)
-        if not await user_joined_chat(user_id):
-            btn = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("🔔 Join Group", url="https://t.me/cute_character_support")]]
-            )
-            return await message.reply_text(
-                "🔒 **Join the support group to claim your daily character.**",
-                reply_markup=btn
-            )
-
+        # Get / create user
         user = await user_collection.find_one({"id": user_id})
         if not user:
             user = {
@@ -107,16 +103,22 @@ async def claim_cmd(_, message: t.Message):
             }
             await user_collection.insert_one(user)
 
+        # Daily cooldown
         last = user.get("last_daily_reward")
         if last and datetime.utcnow() - last < timedelta(days=1):
             remain = timedelta(days=1) - (datetime.utcnow() - last)
             return await message.reply_text(
-                f"⏳ Already claimed!\nNext claim in `{format_time(remain)}`"
+                f"⏳ **Already claimed today!**\n"
+                f"Next claim in `{format_time(remain)}`"
             )
 
+        # Roll rarity
         rarity = roll_rarity()
+
+        # Fetch unique character
         char = await get_unique_character(user_id, rarity)
 
+        # Fallback if rarity exhausted
         if not char:
             char = await collection.aggregate([
                 {"$match": {"img_url": {"$exists": True, "$ne": ""}}},
@@ -127,6 +129,7 @@ async def claim_cmd(_, message: t.Message):
         if not char:
             return await message.reply_text("❌ No characters available.")
 
+        # Update user
         await user_collection.update_one(
             {"id": user_id},
             {
@@ -135,6 +138,7 @@ async def claim_cmd(_, message: t.Message):
             }
         )
 
+        # Send reward
         await message.reply_photo(
             photo=char["img_url"],
             caption=(
