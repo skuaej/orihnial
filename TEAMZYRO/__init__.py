@@ -1,5 +1,4 @@
 
-from TEAMZYRO.modules.star import *
 
 # ============================== IMPORTS ==============================
 import os
