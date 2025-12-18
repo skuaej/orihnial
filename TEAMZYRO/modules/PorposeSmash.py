@@ -1,4 +1,3 @@
-import asyncio
 import random
 from datetime import datetime, timedelta
 
@@ -15,7 +14,6 @@ from TEAMZYRO import user_collection, collection
 SMASH_COOLDOWN = 10       # minutes
 PROPOSE_COOLDOWN = 15     # minutes
 
-# Rarity-based success chances
 RARITY_SUCCESS = {
     "Low": 80,
     "Medium": 60,
@@ -28,13 +26,23 @@ RARITY_SUCCESS = {
 # ─────────────────────────────
 
 def roll_rarity():
-    roll = random.randint(1, 100)
-    if roll <= 40:
+    r = random.randint(1, 100)
+    if r <= 40:
         return "Low"
-    elif roll <= 70:
+    elif r <= 70:
         return "Medium"
-    else:
-        return "High"
+    return "High"
+
+
+def success_title(action: str, rarity: str) -> str:
+    """
+    🔔 sound emoji for all
+    ✨ glow only for Medium & High
+    """
+    base = f"{action.upper()} SUCCESSFUL"
+    if rarity in ("Medium", "High"):
+        base = f"✨✨✨ {base} ✨✨✨"
+    return f"🔔 {base}"
 
 
 # ─────────────────────────────
@@ -66,13 +74,8 @@ async def send_preview(message, mode):
             f"⏳ Wait `{m}m {s}s` before using /{mode} again."
         )
 
-    # Dice animation
-    await bot.send_dice(message.chat.id, "🎲")
-    await asyncio.sleep(2)
-
     rolled_rarity = roll_rarity()
 
-    # Always fetch a character safely
     character = await collection.aggregate([
         {"$match": {"img_url": {"$exists": True, "$ne": ""}}},
         {"$sample": {"size": 1}}
@@ -87,8 +90,7 @@ async def send_preview(message, mode):
         f"👤 **Name:** `{char.get('name','Unknown')}`\n"
         f"📺 **Anime:** `{char.get('anime','Unknown')}`\n"
         f"🆔 **ID:** `{char.get('id','N/A')}`\n"
-        f"⭐ **Rarity:** `{rolled_rarity}`\n"
-        f"🎯 **Success Chance:** `{RARITY_SUCCESS[rolled_rarity]}%`\n\n"
+        f"⭐ **Rarity:** `{rolled_rarity}`\n\n"
         f"❓ Do you want to **{mode.upper()}**?"
     )
 
@@ -140,8 +142,7 @@ async def confirm_action(_, cq: CallbackQuery):
     if not char:
         return await cq.answer("Character not found.", show_alert=True)
 
-    success_chance = RARITY_SUCCESS.get(rarity, 50)
-    success = random.randint(1, 100) <= success_chance
+    success = random.randint(1, 100) <= RARITY_SUCCESS.get(rarity, 50)
 
     # ❌ FAILURE
     if not success:
@@ -153,7 +154,7 @@ async def confirm_action(_, cq: CallbackQuery):
             )
         else:
             fail_text = (
-                "💔 **Proposal Failed**\n\n"
+                "💔 **Propose Failed!**\n\n"
                 "✨ The character was not convinced.\n"
                 "🍀 Better luck next time."
             )
@@ -163,31 +164,29 @@ async def confirm_action(_, cq: CallbackQuery):
         return
 
     # ✅ SUCCESS
+    title = success_title(mode, rarity)
+
     if mode == "smash":
         update = {
             "$push": {"characters": char},
             "$set": {"last_smash_time": now}
         }
-        caption = (
-            "✨ **SMASH SUCCESSFUL!** ✨\n\n"
-            f"👤 **Name:** `{char.get('name')}`\n"
-            f"🆔 **ID:** `{char.get('id','N/A')}`\n"
-            f"⭐ **Rarity:** `{rarity}`\n"
-            f"📺 **Anime:** `{char.get('anime')}`"
-        )
     else:
         update = {
             "$push": {"harem": char},
             "$set": {"last_propose_time": now}
         }
-        caption = (
-            "💖 **Proposal Accepted!** 💖\n\n"
-            f"👤 **Name:** `{char.get('name')}`\n"
-            f"🆔 **ID:** `{char.get('id','N/A')}`\n"
-            f"⭐ **Rarity:** `{rarity}`\n"
-            f"📺 **Anime:** `{char.get('anime')}`\n\n"
-            "✨ Added to your harem!"
-        )
+
+    caption = (
+        f"{title}\n\n"
+        f"👤 **Name:** `{char.get('name')}`\n"
+        f"🆔 **ID:** `{char.get('id','N/A')}`\n"
+        f"⭐ **Rarity:** `{rarity}`\n"
+        f"📺 **Anime:** `{char.get('anime')}`"
+    )
+
+    if mode == "propose":
+        caption += "\n\n✨ Added to your harem!"
 
     await user_collection.update_one({"id": user_id}, update, upsert=True)
     await cq.message.edit_caption(caption)
