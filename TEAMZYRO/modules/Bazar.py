@@ -1,33 +1,32 @@
-
-import random
-from datetime import datetime, timedelta
-
+from datetime import datetime
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 from TEAMZYRO import ZYRO as bot
 from TEAMZYRO import user_collection, collection
 
-
-# ─────────────────────────────────
+# ─────────────────────────────
 # CONFIG
-# ─────────────────────────────────
+# ─────────────────────────────
 
 PRICES = {
-    "low": 5,      # Common
+    "low": 500,
     "medium": 1500,
     "high": 3000
 }
 
-BAZAR_LIMIT = 5
-BAZAR_COOLDOWN = timedelta(minutes=5)
+DAILY_LIMIT = 3 
 
 
-# ─────────────────────────────────
-# ENSURE USER FIELDS (SAFE)
-# ─────────────────────────────────
+# ─────────────────────────────
+# UTILS
+# ─────────────────────────────
 
-async def ensure_bazar_user(user_id):
+def today_str():
+    return datetime.utcnow().strftime("%Y-%m-%d")
+
+
+async def ensure_user(user_id):
     user = await user_collection.find_one({"id": user_id})
 
     if not user:
@@ -36,40 +35,36 @@ async def ensure_bazar_user(user_id):
             "balance": 0,
             "characters": [],
             "bazar_count": 0,
-            "bazar_cooldown": None
+            "bazar_date": today_str()
         }
         await user_collection.insert_one(user)
-        return user
 
-    updates = {}
-    if "balance" not in user:
-        updates["balance"] = 0
-    if "characters" not in user:
-        updates["characters"] = []
-    if "bazar_count" not in user:
-        updates["bazar_count"] = 0
-    if "bazar_cooldown" not in user:
-        updates["bazar_cooldown"] = None
-
-    if updates:
+    # 🔁 DAILY RESET
+    if user.get("bazar_date") != today_str():
         await user_collection.update_one(
             {"id": user_id},
-            {"$set": updates}
+            {
+                "$set": {
+                    "bazar_count": 0,
+                    "bazar_date": today_str()
+                }
+            }
         )
-        user.update(updates)
+        user["bazar_count"] = 0
+        user["bazar_date"] = today_str()
 
     return user
 
 
-# ─────────────────────────────────
-# /bazar COMMAND
-# ─────────────────────────────────
+# ─────────────────────────────
+# /bazar
+# ─────────────────────────────
 
 @bot.on_message(filters.command("bazar"))
 async def bazar_cmd(_, message):
     keyboard = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🟢 Common / Low (500)", callback_data="bazar_low")],
+            [InlineKeyboardButton("🟢 Low (500)", callback_data="bazar_low")],
             [InlineKeyboardButton("🟠 Medium (1500)", callback_data="bazar_medium")],
             [InlineKeyboardButton("🔴 High (3000)", callback_data="bazar_high")]
         ]
@@ -77,59 +72,42 @@ async def bazar_cmd(_, message):
 
     await message.reply_text(
         "🛒 **Welcome to the Bazar**\n\n"
-        "Choose a category to buy a random character:",
+        "Choose a category:",
         reply_markup=keyboard
     )
 
 
-# ─────────────────────────────────
-# BAZAR CALLBACK
-# ─────────────────────────────────
+# ─────────────────────────────
+# SHOW CHARACTER
+# ─────────────────────────────
 
-@bot.on_callback_query(filters.regex("^bazar_"))
-async def bazar_callback(_, cq: CallbackQuery):
+@bot.on_callback_query(filters.regex("^bazar_(low|medium|high)$"))
+async def bazar_show(_, cq: CallbackQuery):
     user_id = cq.from_user.id
-    rarity_key = cq.data.split("_")[1]  # low / medium / high
+    rarity_key = cq.data.split("_")[1]
     price = PRICES[rarity_key]
 
-    user = await ensure_bazar_user(user_id)
-    now = datetime.utcnow()
+    user = await ensure_user(user_id)
 
-    # ⏳ COOLDOWN CHECK
-    if user["bazar_cooldown"]:
-        if now < user["bazar_cooldown"]:
-            remaining = user["bazar_cooldown"] - now
-            mins, secs = divmod(int(remaining.total_seconds()), 60)
-            return await cq.answer(
-                f"⏳ Cooldown active!\nTry again in {mins}m {secs}s",
-                show_alert=True
-            )
-        else:
-            # reset cooldown
-            await user_collection.update_one(
-                {"id": user_id},
-                {"$set": {"bazar_count": 0, "bazar_cooldown": None}}
-            )
-            user["bazar_count"] = 0
-
-    # 💰 BALANCE CHECK
-    if user["balance"] < price:
+    # 🛑 DAILY LIMIT
+    if user["bazar_count"] >= DAILY_LIMIT:
         return await cq.answer(
-            f"❌ Not enough coins!\nRequired: {price}\nYou have: {user['balance']}",
+            "🛑 Daily limit reached!\n15 / 15 purchases",
             show_alert=True
         )
 
-    # 🎯 FETCH CHARACTER (CORRECT RARITY MATCH)
-    rarity_regex = {
+    rarity_map = {
         "low": "Low",
         "medium": "Medium",
         "high": "High"
-    }[rarity_key]
+    }
 
+    # ❌ PREVENT DUPLICATES
     character = await collection.aggregate([
         {
             "$match": {
-                "rarity": {"$regex": rarity_regex, "$options": "i"},
+                "rarity": {"$regex": rarity_map[rarity_key], "$options": "i"},
+                "id": {"$nin": user["characters"]},
                 "img_url": {"$exists": True, "$ne": ""}
             }
         },
@@ -138,55 +116,82 @@ async def bazar_callback(_, cq: CallbackQuery):
 
     if not character:
         return await cq.answer(
-            "❌ No character found in this category.",
+            "❌ No new characters available.",
             show_alert=True
         )
 
     char = character[0]
 
-    # 💾 UPDATE USER DATA
-    new_count = user["bazar_count"] + 1
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🛒 BUY",
+                    callback_data=f"bazar_buy_{rarity_key}_{char['id']}"
+                ),
+                InlineKeyboardButton(
+                    "➡️ NEXT",
+                    callback_data=f"bazar_{rarity_key}"
+                )
+            ]
+        ]
+    )
 
-    update_data = {
-        "$inc": {
-            "balance": -price
-        },
-        "$push": {
-            "characters": char
-        },
-        "$set": {
-            "bazar_count": new_count
-        }
-    }
+    caption = (
+        "🐟 **Ohayou! Check out this character**\n\n"
+        f"👤 **Name:** `{char['name']}`\n"
+        f"📺 **Anime:** `{char['anime']}`\n"
+        f"🆔 **ID:** `{char['id']}`\n"
+        f"⭐ **RARITY:** `{char['rarity']}`\n"
+        f"💰 **Price:** `{price} coins`\n\n"
+        f"🛒 **Purchases today:** `{user['bazar_count']} / {DAILY_LIMIT}`"
+    )
 
-    # ⏳ START COOLDOWN AFTER 5 PURCHASES
-    if new_count >= BAZAR_LIMIT:
-        update_data["$set"]["bazar_cooldown"] = now + BAZAR_COOLDOWN
-        update_data["$set"]["bazar_count"] = 0
+    await cq.message.reply_photo(
+        photo=char["img_url"],
+        caption=caption,
+        reply_markup=keyboard
+    )
+
+    await cq.answer()
+
+
+# ─────────────────────────────
+# BUY CHARACTER
+# ─────────────────────────────
+
+@bot.on_callback_query(filters.regex("^bazar_buy_"))
+async def bazar_buy(_, cq: CallbackQuery):
+    user_id = cq.from_user.id
+    _, _, rarity_key, char_id = cq.data.split("_")
+    char_id = int(char_id)
+
+    user = await ensure_user(user_id)
+    price = PRICES[rarity_key]
+
+    if user["balance"] < price:
+        return await cq.answer(
+            "❌ Not enough coins!",
+            show_alert=True
+        )
+
+    if char_id in user["characters"]:
+        return await cq.answer(
+            "⚠️ You already own this character!",
+            show_alert=True
+        )
 
     await user_collection.update_one(
         {"id": user_id},
-        update_data
+        {
+            "$inc": {
+                "balance": -price,
+                "bazar_count": 1
+            },
+            "$push": {
+                "characters": char_id
+            }
+        }
     )
 
-    # 📤 SEND RESULT
-    await cq.message.reply_photo(
-        photo=char["img_url"],
-        caption=(
-            "🛒 **Purchase Successful!**\n\n"
-            f"👤 Buyer: {cq.from_user.mention}\n"
-            f"💃 Name: `{char['name']}`\n"
-            f"⭐ Rarity: `{char['rarity']}`\n"
-            f"📺 Anime: `{char['anime']}`\n"
-            f"💰 Cost: `{price} coins`"
-        )
-    )
-
-    # ⏳ LIMIT MESSAGE
-    if new_count >= BAZAR_LIMIT:
-        await cq.message.reply_text(
-            "⏳ You bought **5 characters**!\n"
-            "Come back after **5 minutes** 🕔"
-        )
-
-    await cq.answer("✅ Purchase completed!")
+    await cq.answer("✅ Character purchased!", show_alert=True)
