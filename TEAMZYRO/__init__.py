@@ -1,99 +1,129 @@
 
-
-# ============================== IMPORTS ==============================
-import os
+# ---------------------- KOYEB HTTP KEEP-ALIVE ---------------------------
 import asyncio
-import logging
-
-from motor.motor_asyncio import AsyncIOMotorClient
-from pyrogram import Client, filters
-from pyrogram.types import Message
 from aiohttp import web
 
-# ============================== LOGGING ===============================
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
-)
-LOGGER = logging.getLogger("TEAMZYRO")
-
-# ============================== ENV ==================================
-API_ID = int(os.getenv("API_ID"))
-API_HASH = os.getenv("API_HASH")
-BOT_TOKEN = os.getenv("TOKEN")
-MONGO_URL = os.getenv("MONGO_URL")
-PORT = int(os.getenv("PORT", 8000))
-
-SUDO = [int(x) for x in os.getenv("SUDO", "").split(",") if x.isdigit()]
-OWNER_ID = int(os.getenv("OWNER_ID", "0"))
-
-# ============================== PYROGRAM ==============================
-app = Client(
-    "TEAMZYRO",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
-)
-
-# ============================== DATABASE ==============================
-mongo = AsyncIOMotorClient(MONGO_URL)
-db = mongo["hinata_waifu"]
-
-user_collection = db["gaming_user_collection"]
-char_collection = db["gaming_anime_characters"]
-
-# ============================== GLOBALS ===============================
-locks = {}
-user_cooldowns = {}
-
-# ============================== BASIC TEST ============================
-@app.on_message(filters.command("ping"))
-async def ping(_, message: Message):
-    await message.reply_text("🏓 Pong!", parse_mode=None)
-
-# ============================== SAFE START ============================
-@app.on_message(filters.command("start"))
-async def start(_, message: Message):
-    await message.reply_text(
-        "✅ Bot is running successfully.",
-        parse_mode=None
-    )
-
-# ============================== LOAD YOUR MODULES =====================
-from TEAMZYRO.unit.zyro_ban import *
-from TEAMZYRO.unit.zyro_sudo import *
-from TEAMZYRO.unit.zyro_react import *
-from TEAMZYRO.unit.zyro_log import *
-from TEAMZYRO.unit.zyro_send_img import *
-from TEAMZYRO.unit.zyro_rarity import *
-from TEAMZYRO.modules.check import *
-from TEAMZYRO.modules.start import *
-from TEAMZYRO.modules.harem import *
-from TEAMZYRO.modules.guess import *
-from TEAMZYRO.modules.balance import *
-from TEAMZYRO.modules.stats import *
-from TEAMZYRO.modules.shop import *
-from TEAMZYRO.modules.transfer import *
-
-# ============================== KOYEB HTTP ============================
 async def health(request):
     return web.Response(text="OK")
 
 async def start_web():
     web_app = web.Application()
     web_app.router.add_get("/", health)
+
     runner = web.AppRunner(web_app)
     await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
+
+    port = int(os.getenv("PORT", 8000))
+    site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    LOGGER.info(f"🌐 HTTP server running on port {PORT}")
 
-# ============================== MAIN =================================
-async def main():
-    await start_web()
-    await app.start()
-    LOGGER.info("🤖 Bot started successfully")
-    await asyncio.Event().wait()
+    print(f"🌐 HTTP server running on port {port}")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.get_event_loop().create_task(start_web())
+# ----------------------------------------------------------------------- 
+# ------------------------------ IMPORTS ---------------------------------
+import logging
+import os
+from telegram.ext import Application
+from motor.motor_asyncio import AsyncIOMotorClient
+from pyrogram import Client, filters as f
+from pyrogram.types import x
+
+# --------------------------- LOGGING SETUP ------------------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="[%(asctime)s - %(levelname)s] - %(name)s - %(message)s",
+    datefmt="%d-%b-%y %H:%M:%S",
+    handlers=[
+        logging.FileHandler("log.txt"),
+        logging.StreamHandler(),
+    ],
+)
+
+logging.getLogger("httpx").setLevel(logging.ERROR)
+logging.getLogger("pyrogram").setLevel(logging.ERROR)
+logging.getLogger("telegram").setLevel(logging.ERROR)
+
+def LOGGER(name: str) -> logging.Logger:
+    return logging.getLogger(name)
+
+# ---------------------------- CONSTANTS ---------------------------------
+api_id = os.getenv("API_ID", "23343216")
+api_hash = os.getenv("API_HASH", "1d66f21cd828dc22b80e3750719bd94a")
+TOKEN = os.getenv("TOKEN", "8092720888:AAGdYNEUDOmGkPONuvO_YQ_ywdWly5INT2s")
+GLOG = os.getenv("GLOG", "cute_character_support2")
+CHARA_CHANNEL_ID = os.getenv("CHARA_CHANNEL_ID", "cute_character_support2")
+SUPPORT_CHAT_ID = os.getenv("SUPPORT_CHAT_ID", "-1003555329185")
+mongo_url = os.getenv("MONGO_URL", "mongodb+srv://sk5400552:shjjkytdcghhudd@cluster0g.kbllv.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0g")
+
+MUSJ_JOIN = os.getenv("MUSJ_JOIN", "https://t. me/cute_character_support")
+
+# Modified to support both image and video URLs
+START_MEDIA = os.getenv("START_MEDIA", "https://files.catbox.moe/4uf7r9.jpg,https://files.catbox.moe/3saw6n.jpg,https://files.catbox.moe/f5njbm.jpg,https://telegra.ph/file/1a3c152717https://files.catbox.moe/4uf7r9.jpg,https://files.catbox.moe/3saw6n.jpg,https://files.catbox.moe/33nb6o.jpg,https://files.catbox.moe/zpbvfn.jpg,https://files.catbox.moe/tqn7cq.mp4,https://files.catbox.moe/t8rcw6.mp4").split(',')
+
+PHOTO_URL = [
+    os.getenv("PHOTO_URL_1", "https://files.catbox.moe/f5njbm.jpg"),
+    os.getenv("PHOTO_URL_2", "https://files.catbox.moe/3saw6n.jpg")
+]
+
+STATS_IMG = ["https://files.catbox.moe/zpbvfn.jpg"]
+
+SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "https://t. me/cute_character_support")
+UPDATE_CHAT = os.getenv("UPDATE_CHAT", "https://t. me/cute_character_support")
+SUDO = list(map(int, os.getenv("SUDO", "7450385463").split(',')))
+OWNER_ID = int(os.getenv("OWNER_ID", "7850114307"))
+
+# --------------------- TELEGRAM BOT CONFIGURATION -----------------------
+command_filter = f.create(lambda _, __, message: message.text and message.text.startswith("/"))
+application = Application.builder().token(TOKEN).build()
+ZYRO = Client("Shivu", api_id=api_id, api_hash=api_hash, bot_token=TOKEN)
+
+# -------------------------- DATABASE SETUP ------------------------------
+ddw = AsyncIOMotorClient(mongo_url)
+db = ddw['hinata_waifu']
+
+# Collections
+user_totals_collection = db['gaming_totals']
+group_user_totals_collection = db['gaming_group_total']
+top_global_groups_collection = db['gaming_global_groups']
+pm_users = db['gaming_pm_users']
+destination_collection = db['gamimg_user_collection']
+destination_char = db['gaming_anime_characters']
+
+# -------------------------- GLOBAL VARIABLES ----------------------------
+app = ZYRO
+sudo_users = SUDO
+collection = destination_char
+user_collection = destination_collection
+
+# --------------------------- STRIN ---------------------------------------
+locks = {}
+message_counters = {}
+spam_counters = {}
+last_characters = {}
+sent_characters = {}
+first_correct_guesses = {}
+message_counts = {}
+last_user = {}
+warned_users = {}
+user_cooldowns = {}
+user_nguess_progress = {}
+user_guess_progress = {}
+normal_message_counts = {}  
+
+# -------------------------- POWER SETUP --------------------------------
+from TEAMZYRO.unit.zyro_ban import *
+from TEAMZYRO.unit.zyro_sudo import *
+from TEAMZYRO.unit.zyro_react import *
+from TEAMZYRO.unit.zyro_log import *
+from TEAMZYRO.unit.zyro_send_img import *
+from TEAMZYRO.unit.zyro_rarity import *
+# ------------------------------------------------------------------------
+
+async def PLOG(text: str):
+    await app.send_message(
+       chat_id=GLOG,
+       text=text
+   )
+
+# ---------------------------- END OF CODE ------------------------------
