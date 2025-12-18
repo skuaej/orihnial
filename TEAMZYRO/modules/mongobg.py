@@ -1,115 +1,69 @@
-from pyrogram import filters
+from pyrogram import Client, filters
 from pymongo import MongoClient
-import bson
 import os
+import asyncio
+import bson
 from TEAMZYRO import app
 
-# ─────────────────────────────
-# CONFIG
-# ─────────────────────────────
+def calculate_collection_size(documents):
+    """
+    Calculate the size of a list of documents in bytes.
+    """
+    return sum(len(bson.BSON.encode(doc)) for doc in documents)
 
-OWNER_ID = 1334658171
-
-SOURCE_URI = os.getenv("MONGO_URI")
-BACKUP_URI = os.getenv("BACKUP_MONGO_URI")
-DB_NAME = os.getenv("DB_NAME", "waifu_bot")
-
-
-# ─────────────────────────────
-# UTILS
-# ─────────────────────────────
-
-def calc_size(docs):
-    return sum(len(bson.BSON.encode(d)) for d in docs)
-
-
-def check_env():
-    return all([SOURCE_URI, BACKUP_URI, DB_NAME])
-
-
-# ─────────────────────────────
-# BACKUP COMMAND
-# ─────────────────────────────
-
-@app.on_message(filters.command("backupdb") & filters.user(OWNER_ID))
-async def backup_db(_, message):
-    if not check_env():
-        return await message.reply_text(
-            "❌ ENV missing!\nSet `MONGO_URI`, `BACKUP_MONGO_URI`, `DB_NAME`"
-        )
-
+@app.on_message(filters.command("mongobackup") & filters.private)
+async def mongo_backup(client, message):
     try:
-        await message.reply_text("⏳ Starting database backup...")
+        # Split command arguments
+        args = message.text.split()
+        if len(args) != 4:
+            await message.reply("Usage: /mongobackup {source_mongo_uri} {destination_mongo_uri} {database_name}")
+            return
 
-        src_client = MongoClient(SOURCE_URI)
-        dst_client = MongoClient(BACKUP_URI)
+        source_mongo_uri = args[1]
+        destination_mongo_uri = args[2]
+        database_name = args[3]
 
-        src_db = src_client[DB_NAME]
-        dst_db = dst_client[DB_NAME]
+        await message.reply(f"Connecting to source MongoDB: `{source_mongo_uri}`...")
+        source_client = MongoClient(source_mongo_uri)
+        source_db = source_client[database_name]
 
-        total_size = 0
-        total_collections = 0
+        await message.reply(f"Connecting to destination MongoDB: `{destination_mongo_uri}`...")
+        dest_client = MongoClient(destination_mongo_uri)
+        dest_db = dest_client[database_name]
 
-        for col_name in src_db.list_collection_names():
-            src_col = src_db[col_name]
-            dst_col = dst_db[col_name]
+        await message.reply(f"Starting backup of `{database_name}`...")
 
-            docs = list(src_col.find())
-            dst_col.delete_many({})
+        total_size = 0  # Total size tracker
+        for collection_name in source_db.list_collection_names():
+            source_collection = source_db[collection_name]
+            dest_collection = dest_db[collection_name]
 
-            if docs:
-                dst_col.insert_many(docs)
-                total_size += calc_size(docs)
+            # Fetch all documents from the source collection
+            documents = list(source_collection.find())
+            collection_size = calculate_collection_size(documents)
+            total_size += collection_size
 
-            total_collections += 1
+            # Clear destination collection and insert updated documents
+            dest_collection.delete_many({})  # Clear old data
+            if documents:
+                dest_collection.insert_many(documents)
+                size_mb = collection_size / (1024 * 1024)
+                size_str = f"{size_mb:.2f} MB" if size_mb >= 1 else f"{collection_size / 1024:.2f} KB"
+                await message.reply(f"Collection `{collection_name}` backed up successfully. Size: {size_str}.")
+            else:
+                await message.reply(f"Collection `{collection_name}` is empty. Skipping...")
 
-        src_client.close()
-        dst_client.close()
-
-        await message.reply_text(
-            f"✅ **Backup Completed!**\n\n"
-            f"📦 Collections: `{total_collections}`\n"
-            f"💾 Size: `{total_size/1024:.2f} KB`"
-        )
-
+        total_size_mb = total_size / (1024 * 1024)
+        total_size_str = f"{total_size_mb:.2f} MB" if total_size_mb >= 1 else f"{total_size / 1024:.2f} KB"
+        await message.reply(f"Backup of `{database_name}` completed successfully! Total size: {total_size_str}.")
     except Exception as e:
-        await message.reply_text(f"❌ Backup failed:\n`{e}`")
+        await message.reply(f"An error occurred: {e}")
+    finally:
+        # Close MongoDB connections
+        try:
+            source_client.close()
+            dest_client.close()
+        except:
+            pass
 
-
-# ─────────────────────────────
-# RESTORE COMMAND
-# ─────────────────────────────
-
-@app.on_message(filters.command("restoredb") & filters.user(OWNER_ID))
-async def restore_db(_, message):
-    if not check_env():
-        return await message.reply_text(
-            "❌ ENV missing!\nSet `MONGO_URI`, `BACKUP_MONGO_URI`, `DB_NAME`"
-        )
-
-    try:
-        await message.reply_text("⏳ Restoring database from backup...")
-
-        src_client = MongoClient(BACKUP_URI)
-        dst_client = MongoClient(SOURCE_URI)
-
-        src_db = src_client[DB_NAME]
-        dst_db = dst_client[DB_NAME]
-
-        for col_name in src_db.list_collection_names():
-            src_col = src_db[col_name]
-            dst_col = dst_db[col_name]
-
-            docs = list(src_col.find())
-            dst_col.delete_many({})
-
-            if docs:
-                dst_col.insert_many(docs)
-
-        src_client.close()
-        dst_client.close()
-
-        await message.reply_text("✅ **Restore Completed Successfully!**")
-
-    except Exception as e:
-        await message.reply_text(f"❌ Restore failed:\n`{e}`")
