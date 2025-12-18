@@ -1,11 +1,29 @@
-
-
 import asyncio
+import random
 from datetime import datetime, timedelta
+
 from pyrogram import filters, types as t
 from TEAMZYRO import ZYRO as bot
 from TEAMZYRO import user_collection, collection
 
+
+# ─────────────────────────────
+# RARITY ROLL (40 / 30 / 30)
+# ─────────────────────────────
+
+def roll_rarity():
+    roll = random.randint(1, 100)
+    if roll <= 40:
+        return "Low"
+    elif roll <= 70:
+        return "Medium"
+    else:
+        return "High"
+
+
+# ─────────────────────────────
+# /smash COMMAND
+# ─────────────────────────────
 
 @bot.on_message(filters.command("smash"))
 async def smash_cmd(_, message: t.Message):
@@ -43,27 +61,37 @@ async def smash_cmd(_, message: t.Message):
             emoji="🎲"
         )
         await asyncio.sleep(2)
-        dice_value = dice_msg.dice.value  # (optional use)
 
-        # ─── Fetch character ONLY from DB ───────────────────
+        # ─── Roll rarity (BACKEND) ─────────────────────────
+        rarity = roll_rarity()
+
+        # ─── Fetch character FROM DB by rarity ─────────────
         character = await collection.aggregate([
             {
                 "$match": {
+                    "rarity": {"$regex": f"^{rarity}$", "$options": "i"},
                     "img_url": {"$exists": True, "$ne": ""},
                     "name": {"$exists": True},
-                    "anime": {"$exists": True},
-                    "rarity": {"$exists": True}
+                    "anime": {"$exists": True}
                 }
             },
             {"$sample": {"size": 1}}
         ]).to_list(length=1)
 
+        # ─── Fallback if rarity pool empty ─────────────────
         if not character:
-            return await message.reply_text("❌ No characters available in database.")
+            character = await collection.aggregate([
+                {"$sample": {"size": 1}}
+            ]).to_list(length=1)
+
+        if not character:
+            return await message.reply_text(
+                "❌ No characters available in database."
+            )
 
         char = character[0]
 
-        # ─── Store character to user ────────────────────────
+        # ─── Store character to user ───────────────────────
         await user_collection.update_one(
             {"id": user_id},
             {
@@ -73,9 +101,10 @@ async def smash_cmd(_, message: t.Message):
             upsert=True
         )
 
-        # ─── Send result ────────────────────────────────────
+        # ─── Send result ───────────────────────────────────
         caption = (
-            f"🔥 **SMASH SUCCESSFUL! {mention}** 🔥\n\n"
+            f"✨ **SMASH SUCCESSFUL!** ✨\n\n"
+            f"👤 **User:** {mention}\n"
             f"💃 **Name:** `{char['name']}`\n"
             f"⭐ **Rarity:** `{char['rarity']}`\n"
             f"📺 **Anime:** `{char['anime']}`"
