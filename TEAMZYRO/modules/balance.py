@@ -1,4 +1,3 @@
-
 from pyrogram import filters
 from pyrogram.types import Message
 from pyrogram.enums import ParseMode
@@ -6,12 +5,12 @@ import html
 
 from TEAMZYRO import app, user_collection
 
-# 🔐 ONLY THIS USER CAN GIVE BALANCE
+# 🔐 ONLY THIS USER CAN ADD BALANCE
 BALANCE_GIVER_ID = 1334658171
 
 
 # ─────────────────────────────────
-# ENSURE USER (AUTO-FIX OLD USERS)
+# ENSURE USER (AUTO FIX)
 # ─────────────────────────────────
 async def ensure_user(user):
     data = await user_collection.find_one({"id": user.id})
@@ -29,15 +28,12 @@ async def ensure_user(user):
         return data
 
     updates = {}
-
     if "balance" not in data:
         updates["balance"] = 0
     if "tokens" not in data:
         updates["tokens"] = 0
-    if "first_name" not in data:
-        updates["first_name"] = user.first_name
-    if "username" not in data:
-        updates["username"] = user.username
+    if "characters" not in data:
+        updates["characters"] = []
 
     if updates:
         await user_collection.update_one(
@@ -50,7 +46,7 @@ async def ensure_user(user):
 
 
 # ─────────────────────────────────
-# BALANCE COMMAND
+# /balance
 # ─────────────────────────────────
 @app.on_message(filters.command("balance"))
 async def balance_cmd(_, message: Message):
@@ -65,12 +61,12 @@ async def balance_cmd(_, message: Message):
 
 
 # ─────────────────────────────────
-# ADD BALANCE (ONLY ONE USER)
+# /addbal (ONLY SPECIFIC USER)
 # ─────────────────────────────────
 @app.on_message(filters.command("addbal"))
-async def add_balance(_, message: Message):
+async def addbal_cmd(_, message: Message):
     if message.from_user.id != BALANCE_GIVER_ID:
-        return await message.reply_text("❌ You are not allowed to give balance.")
+        return await message.reply_text("❌ You are not allowed.")
 
     parts = message.text.split()
     amount = None
@@ -80,15 +76,13 @@ async def add_balance(_, message: Message):
         if p.isdigit():
             amount = int(p)
         elif p.startswith("@"):
-            user = await user_collection.find_one({"username": p[1:]})
-            if user:
-                target_id = user["id"]
+            u = await user_collection.find_one({"username": p[1:]})
+            if u:
+                target_id = u["id"]
 
     if not amount or not target_id:
         return await message.reply_text(
-            "❌ Usage:\n"
-            "/addbal <amount> @username\n"
-            "/addbal @username <amount>"
+            "❌ Usage:\n/addbal <amount> @username\n/addbal @username <amount>"
         )
 
     await user_collection.update_one(
@@ -104,7 +98,7 @@ async def add_balance(_, message: Message):
 
 
 # ─────────────────────────────────
-# PAY COMMAND (FIXED)
+# /pay
 # ─────────────────────────────────
 @app.on_message(filters.command("pay"))
 async def pay_cmd(_, message: Message):
@@ -124,15 +118,13 @@ async def pay_cmd(_, message: Message):
             if p.isdigit():
                 amount = int(p)
             elif p.startswith("@"):
-                user = await user_collection.find_one({"username": p[1:]})
-                if user:
-                    receiver_id = user["id"]
+                u = await user_collection.find_one({"username": p[1:]})
+                if u:
+                    receiver_id = u["id"]
 
     if not amount or not receiver_id:
         return await message.reply_text(
-            "❌ Usage:\n"
-            "/pay <amount> @username\n"
-            "/pay @username <amount>"
+            "❌ Usage:\n/pay <amount> @username\n/pay @username <amount>"
         )
 
     if sender["balance"] < amount:
