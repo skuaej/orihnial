@@ -1,10 +1,13 @@
+
+
 # ------------------------------ IMPORTS ---------------------------------
 import logging
 import os
+
 from telegram.ext import Application
 from motor.motor_asyncio import AsyncIOMotorClient
 from pyrogram import Client, filters as f
-from pyrogram.types import x
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 # --------------------------- LOGGING SETUP ------------------------------
 logging.basicConfig(
@@ -25,47 +28,69 @@ def LOGGER(name: str) -> logging.Logger:
     return logging.getLogger(name)
 
 # ---------------------------- CONSTANTS ---------------------------------
-api_id = os.getenv("API_ID", "23343216")
+api_id = int(os.getenv("API_ID", "23343216"))
 api_hash = os.getenv("API_HASH", "1d66f21cd828dc22b80e3750719bd94a")
-TOKEN = os.getenv("TOKEN", "8092720888:AAGdYNEUDOmGkPONuvO_YQ_ywdWly5INT2s")
-GLOG = os.getenv("GLOG", "gojo_waifu")
-CHARA_CHANNEL_ID = os.getenv("CHARA_CHANNEL_ID", "gojo_waifu")
-SUPPORT_CHAT_ID = os.getenv("SUPPORT_CHAT_ID", "-1002792716047")
-mongo_url = os.getenv("MONGO_URL", "mongodb+srv://Gojowaifu:waifu123@gojowaifu.royysxq.mongodb.net/?retryWrites=true&w=majority&appName=Gojowaifu")
+TOKEN = os.getenv("TOKEN", "YOUR_BOT_TOKEN")
 
-MUSJ_JOIN = os.getenv("MUSJ_JOIN", "https://t.me/+8KU5ZDxvZyw0N2U1")
+GLOG = os.getenv("GLOG", "cute_character_support2")
+CHARA_CHANNEL_ID = os.getenv("CHARA_CHANNEL_ID", "cute_character_support")
+SUPPORT_CHAT_ID = int(os.getenv("SUPPORT_CHAT_ID", "-1003555329185"))
 
-# Modified to support both image and video URLs
-START_MEDIA = os.getenv("START_MEDIA", "https://files.catbox.moe/4uf7r9.jpg,https://files.catbox.moe/3saw6n.jpg,https://files.catbox.moe/f5njbm.jpg,https://telegra.ph/file/1a3c152717https://files.catbox.moe/4uf7r9.jpg,https://files.catbox.moe/3saw6n.jpg,https://files.catbox.moe/33nb6o.jpg,https://files.catbox.moe/zpbvfn.jpg,https://files.catbox.moe/tqn7cq.mp4,https://files.catbox.moe/t8rcw6.mp4").split(',')
+mongo_url = os.getenv(
+    "MONGO_URL",
+    "mongodb+srv://sk5400552:shjjkytdcghhudd@cluster0g.kbllv.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0g"
+)
+
+MUSJ_JOIN = os.getenv("MUSJ_JOIN", "https://t.me/cute_character_support")
+
+START_MEDIA = os.getenv(
+    "START_MEDIA",
+    "https://files.catbox.moe/4uf7r9.jpg,"
+    "https://files.catbox.moe/3saw6n.jpg,"
+    "https://files.catbox.moe/f5njbm.jpg,"
+    "https://files.catbox.moe/33nb6o.jpg,"
+    "https://files.catbox.moe/zpbvfn.jpg,"
+    "https://files.catbox.moe/tqn7cq.mp4,"
+    "https://files.catbox.moe/t8rcw6.mp4"
+).split(",")
 
 PHOTO_URL = [
     os.getenv("PHOTO_URL_1", "https://files.catbox.moe/f5njbm.jpg"),
-    os.getenv("PHOTO_URL_2", "https://files.catbox.moe/3saw6n.jpg")
+    os.getenv("PHOTO_URL_2", "https://files.catbox.moe/3saw6n.jpg"),
 ]
 
 STATS_IMG = ["https://files.catbox.moe/zpbvfn.jpg"]
 
-SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "https://t.me/GOJO_NOBITA_II")
-UPDATE_CHAT = os.getenv("UPDATE_CHAT", "https://t.me/GOJO_SUPPORT_GROUP_II")
-SUDO = list(map(int, os.getenv("SUDO", "7450385463").split(',')))
-OWNER_ID = int(os.getenv("OWNER_ID", "7553434931"))
+SUPPORT_CHAT = os.getenv("SUPPORT_CHAT", "https://t.me/cute_character_support")
+UPDATE_CHAT = os.getenv("UPDATE_CHAT", "https://t.me/cute_character_support")
+
+SUDO = [int(x) for x in os.getenv("SUDO", "7450385463").split(",") if x.strip().isdigit()]
+OWNER_ID = int(os.getenv("OWNER_ID", "7850114307"))
 
 # --------------------- TELEGRAM BOT CONFIGURATION -----------------------
-command_filter = f.create(lambda _, __, message: message.text and message.text.startswith("/"))
+command_filter = f.create(
+    lambda _, __, message: message.text and message.text.startswith("/")
+)
+
 application = Application.builder().token(TOKEN).build()
-ZYRO = Client("Shivu", api_id=api_id, api_hash=api_hash, bot_token=TOKEN)
+
+ZYRO = Client(
+    "Shivu",
+    api_id=api_id,
+    api_hash=api_hash,
+    bot_token=TOKEN
+)
 
 # -------------------------- DATABASE SETUP ------------------------------
 ddw = AsyncIOMotorClient(mongo_url)
-db = ddw['hinata_waifu']
+db = ddw["hinata_waifu"]
 
-# Collections
-user_totals_collection = db['gaming_totals']
-group_user_totals_collection = db['gaming_group_total']
-top_global_groups_collection = db['gaming_global_groups']
-pm_users = db['gaming_pm_users']
-destination_collection = db['gamimg_user_collection']
-destination_char = db['gaming_anime_characters']
+user_totals_collection = db["gaming_totals"]
+group_user_totals_collection = db["gaming_group_total"]
+top_global_groups_collection = db["gaming_global_groups"]
+pm_users = db["gaming_pm_users"]
+destination_collection = db["gaming_user_collection"]
+destination_char = db["gaming_anime_characters"]
 
 # -------------------------- GLOBAL VARIABLES ----------------------------
 app = ZYRO
@@ -73,7 +98,6 @@ sudo_users = SUDO
 collection = destination_char
 user_collection = destination_collection
 
-# --------------------------- STRIN ---------------------------------------
 locks = {}
 message_counters = {}
 spam_counters = {}
@@ -86,7 +110,7 @@ warned_users = {}
 user_cooldowns = {}
 user_nguess_progress = {}
 user_guess_progress = {}
-normal_message_counts = {}  
+normal_message_counts = {}
 
 # -------------------------- POWER SETUP --------------------------------
 from TEAMZYRO.unit.zyro_ban import *
@@ -95,12 +119,12 @@ from TEAMZYRO.unit.zyro_react import *
 from TEAMZYRO.unit.zyro_log import *
 from TEAMZYRO.unit.zyro_send_img import *
 from TEAMZYRO.unit.zyro_rarity import *
-# ------------------------------------------------------------------------
+# ----------------------------------------------------------------------
 
 async def PLOG(text: str):
     await app.send_message(
-       chat_id=GLOG,
-       text=text
-   )
+        chat_id=GLOG,
+        text=text
+    )
 
-# ---------------------------- END OF CODE ------------------------------
+# ---------------------------- END --------------------------------------
