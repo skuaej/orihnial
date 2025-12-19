@@ -38,10 +38,10 @@ async def generate_start_message(client, message):
 
     buttons = [
         [InlineKeyboardButton("⋆ᴀᴅᴅ ᴛᴏ ʏᴏᴜʀ ɢʀᴏᴜᴘ⋆", url=f"https://t.me/{bot_user.username}?startgroup=true")],
-        [InlineKeyboardButton("❍sᴜᴘᴘᴏʀᴛ❍", url="https://t.me/GOJO_NOBITA_II"), 
-         InlineKeyboardButton("❍ᴄʜᴀɴɴᴇʟ❍", url="https://t.me/GOJO_SUPPORT_GROUP_II")],
+        [InlineKeyboardButton("❍sᴜᴘᴘᴏʀᴛ❍", url="https://t.me/cute_character_support"), 
+         InlineKeyboardButton("❍ᴄʜᴀɴɴᴇʟ❍", url="https://t.me/cute_character_support")],
         [InlineKeyboardButton("⋆ʜᴇʟᴘ⋆", callback_data="open_help")],
-        [InlineKeyboardButton("✦ʟᴏʀᴅ✦", url="http://t.me/II_YOUR_GOJO_ll")]
+        [InlineKeyboardButton("✦ʟᴏʀᴅ✦", url="http://t.me/IIl")]
     ]
     
     return caption, buttons
@@ -53,7 +53,7 @@ async def generate_group_start_message(client):
     buttons = [
         [
             InlineKeyboardButton("◦ᴀᴅᴅ ᴍᴇ◦", url=f"https://t.me/{bot_user.username}?startgroup=true"),
-            InlineKeyboardButton("◦sᴜᴘᴘᴏʀᴛ◦", url="https://t.me/GOJO_NOBITA_II"),
+            InlineKeyboardButton("◦sᴜᴘᴘᴏʀᴛ◦", url="https://t.me/cute_character_support"),
         ]
     ]
     return caption, buttons
@@ -168,3 +168,4 @@ async def back_to_home(client, query: CallbackQuery):
         caption,
         reply_markup=InlineKeyboardMarkup(buttons)  # Pass InlineKeyboardMarkup directly
         )
+
