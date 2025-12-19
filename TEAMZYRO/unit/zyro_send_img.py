@@ -78,7 +78,7 @@ async def send_image(update: Update, context: CallbackContext) -> None:
             chat_id=chat_id,
             video=selected_character['vid_url'],
             caption=f"""✨ A {selected_character['rarity']} Character Appears! ✨
-🔍 Use /guess to claim this mysterious character!
+🔍 Use /grab to claim this mysterious character!
 💫 Hurry, before someone else snatches them!""",
             parse_mode='Markdown'
         )
@@ -87,7 +87,7 @@ async def send_image(update: Update, context: CallbackContext) -> None:
             chat_id=chat_id,
             photo=selected_character['img_url'],
             caption=f"""✨ A {selected_character['rarity']} Character Appears! ✨
-🔍 Use /guess to claim this mysterious character!
+🔍 Use /grab to claim this mysterious character!
 💫 Hurry, before someone else snatches them!""",
             parse_mode='Markdown'
         )
